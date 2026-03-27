@@ -1,2 +1,2 @@
-web: gunicorn retail_pos.wsgi --log-file -
+web: gunicorn cortex_pos.wsgi --log-file -
 release: python manage.py migrate
