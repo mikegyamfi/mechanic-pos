@@ -2,7 +2,7 @@ from .base import *
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'abosseyokai-hub-a4e53ad7e19b.herokuapp.com']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'abosseyokai-hub-a4e53ad7e19b.herokuapp.com', 'aohub.ddttechnologies.com']
 
 # Database for development
 # DATABASES = {
