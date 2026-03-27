@@ -62,13 +62,18 @@
                                 </div>
                                 <div class="col-md-4">
                                     {{ form.selling_price|as_crispy_field }}
+                                    <small class="text-muted">Standard price (or Pair price).</small>
                                 </div>
                                 <div class="col-md-4">
                                     {{ form.wholesale_price|as_crispy_field }}
                                 </div>
                                 <div class="col-md-4">
+                                    {{ form.single_piece_price|as_crispy_field }}
+                                    <small class="text-info fw-bold">If breaking a pair (Optional).</small>
+                                </div>
+                                <div class="col-md-4">
                                     {{ form.tax_rate|as_crispy_field }}
-                                    <small class="text-muted">Specific sales tax % for this item (optional).</small>
+                                    <small class="text-muted">Specific sales tax % for this item.</small>
                                 </div>
                             </div>
                         </div>
@@ -96,6 +101,12 @@
 
                                 <h6 class="fw-bold text-muted mt-4 mb-3">Stock Settings</h6>
                                 {{ form.low_stock_threshold|as_crispy_field }}
+
+                                <div class="form-check form-switch mt-3">
+                                    {{ form.is_sold_in_pairs }}
+                                    <label class="form-check-label fw-bold text-primary" for="{{ form.is_sold_in_pairs.id_for_label }}">Sold in Pairs (Headlights, Shocks)</label>
+                                    <div class="form-text">System will multiply imported box quantity by 2.</div>
+                                </div>
 
                                 <div class="form-check form-switch mt-3">
                                     {{ form.is_perishable }}

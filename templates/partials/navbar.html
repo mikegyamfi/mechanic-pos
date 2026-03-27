@@ -1,5 +1,5 @@
 {% load static %}
-<nav class="bg-white p-3 layout-navbar container-xxl navbar-detached navbar navbar-expand-xl align-items-center bg-navbar-theme" id="layout-navbar">
+<nav class="layout-navbar container-xxl navbar-detached navbar navbar-expand-xl align-items-center bg-navbar-theme" id="layout-navbar">
     <div class="layout-menu-toggle navbar-nav align-items-xl-center me-4 me-xl-0 d-xl-none">
       <a class="nav-item nav-link px-0 me-xl-6" href="javascript:void(0)">
         <i class="icon-base ri ri-menu-line icon-md"></i>
@@ -11,7 +11,7 @@
       <!-- Current Location Badge -->
       {% if user.is_authenticated and user.assigned_location %}
       <div class="navbar-nav align-items-center">
-        <span class="badge p-3 bg-label-primary">
+        <span class="btn btn-sm btn-outline-primary">
             <i class="ri ri-store-2-line me-1"></i> {{ user.assigned_location.name }}
         </span>
       </div>
@@ -44,9 +44,9 @@
             </li>
             <li><div class="dropdown-divider my-1"></div></li>
             <li>
-              <a class="dropdown-item" href="#">
-                <i class="icon-base ri ri-user-line icon-md me-3"></i>
-                <span>My Profile</span>
+              <a class="dropdown-item" href="{% url 'users:change_password' %}">
+                <i class="icon-base ri ri-lock-password-line icon-md me-3 text-primary"></i>
+                <span>Change Password</span>
               </a>
             </li>
             <li><div class="dropdown-divider my-1"></div></li>

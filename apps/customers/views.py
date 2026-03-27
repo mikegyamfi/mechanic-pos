@@ -2,7 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count, F
 from django.core.paginator import Paginator
 
 from .models import Customer
@@ -138,3 +138,23 @@ def api_create_customer(request):
             }
         })
     return JsonResponse({'success': False, 'message': 'Invalid method'})
+
+
+@login_required
+def customer_statement(request, pk):
+    """Generates a professional statement of account (Arrears) for a mechanic."""
+    customer = get_object_or_404(Customer, pk=pk)
+
+    # Fetch all sales where they haven't fully paid
+    unpaid_invoices = customer.sales.filter(
+        amount_paid__lt=F('total_amount')
+    ).order_by('created_at')
+
+    # We can calculate the exact debt on each invoice dynamically in the template
+    # or just rely on the customer.current_debt property we built.
+
+    return render(request, 'customers/statement.html', {
+        'customer': customer,
+        'unpaid_invoices': unpaid_invoices
+    })
+

@@ -56,7 +56,7 @@ def pos_view(request):
         'session': active_session,
         'location': location,
         'categories': categories,
-        'products': products[:50]
+        'products': products  # FIX: Removed [:50] so the POS can filter the full catalog!
     })
 
 
@@ -72,6 +72,28 @@ def process_sale(request):
         total_amount = Decimal(str(data.get('total_amount', 0)))
         customer_id = data.get('customer_id')
 
+        # --- 1. THE CREDIT LIMIT SECURITY GUARDRAIL ---
+        total_paid_upfront = sum(Decimal(str(p['amount'])) for p in payments)
+        new_debt_requested = max(Decimal('0.00'), total_amount - total_paid_upfront)
+
+        if new_debt_requested > 0:
+            if not customer_id:
+                return JsonResponse({
+                    'success': False,
+                    'message': 'SECURITY HALT: You cannot process a credit sale without selecting a Customer/Mechanic.'
+                }, status=400)
+
+            customer = Customer.objects.get(id=customer_id)
+
+            if new_debt_requested > customer.available_credit:
+                return JsonResponse({
+                    'success': False,
+                    'message': f"CREDIT REJECTED: {customer.get_display_name()} has a limit of ₵{customer.credit_limit}. "
+                               f"They currently owe ₵{customer.current_debt}. "
+                               f"Available credit is only ₵{customer.available_credit}. Please ask them to pay previous arrears first."
+                }, status=400)
+
+        # --- 2. SESSION VALIDATION ---
         user = request.user
         location = user.assigned_location
 
@@ -83,28 +105,40 @@ def process_sale(request):
             return JsonResponse({'success': False, 'message': 'No active register session. Please open register.'})
 
         sale = Sale.objects.create(
-            location=location,
-            cashier=user,
-            register_session=session,
-            total_amount=total_amount,
-            status=Sale.Status.COMPLETED,
-            amount_paid=0,
-            customer_id=customer_id
+            location=location, cashier=user, register_session=session,
+            total_amount=total_amount, status=Sale.Status.COMPLETED,
+            amount_paid=0, customer_id=customer_id
         )
 
-        # Process Cart Items (Stock Deduction via FEFO)
+        # --- 3. PROCESS CART ITEMS (FEFO & BREAK BULK LOGIC) ---
         for item in cart:
             product_id = item['id']
             qty_sold = int(item['qty'])
             unit_price = Decimal(str(item['price']))
+            sell_mode = item.get('sellMode', 'PIECE')
 
             product = Product.objects.get(id=product_id)
+
+            # >> BREAK BULK MATHEMATICS <<
+            is_pair_sale = (sell_mode == 'PAIR' and product.is_sold_in_pairs)
+            pieces_to_deduct = qty_sold * 2 if is_pair_sale else qty_sold
+            actual_cost_limit = product.cost_price * 2 if is_pair_sale else product.cost_price
+
+            # >> THE COST GUARDRAIL <<
+            if unit_price < actual_cost_limit:
+                return JsonResponse({
+                    'success': False,
+                    'message': f"SECURITY ALERT: The selling price for '{product.name}' (₵{unit_price}) is below your Break-Even Cost (₵{actual_cost_limit}). Sale blocked."
+                }, status=400)
 
             batches = StockBatch.objects.filter(
                 product=product, location=location, quantity__gt=0
             ).order_by('expiry_date')
 
-            qty_needed = qty_sold
+            qty_needed = pieces_to_deduct
+
+            # Since we deduct actual pieces, we must divide the pair price in half for accounting
+            price_per_piece = unit_price / 2 if is_pair_sale else unit_price
 
             for batch in batches:
                 if qty_needed <= 0: break
@@ -112,8 +146,8 @@ def process_sale(request):
 
                 SaleItem.objects.create(
                     sale=sale, product=product, source_batch=batch,
-                    quantity=take, unit_price=unit_price, unit_cost=batch.cost_price,
-                    total_price=take * unit_price
+                    quantity=take, unit_price=price_per_piece, unit_cost=batch.cost_price,
+                    total_price=take * price_per_piece
                 )
 
                 batch.quantity -= take
@@ -123,11 +157,11 @@ def process_sale(request):
             if qty_needed > 0:
                 SaleItem.objects.create(
                     sale=sale, product=product, source_batch=None,
-                    quantity=qty_needed, unit_price=unit_price, unit_cost=product.cost_price,
-                    total_price=qty_needed * unit_price
+                    quantity=qty_needed, unit_price=price_per_piece, unit_cost=product.cost_price,
+                    total_price=qty_needed * price_per_piece
                 )
 
-        # Process Payments
+        # --- 4. PROCESS PAYMENTS & CHANGE ---
         total_paid = Decimal('0.00')
         total_cash_tendered = Decimal('0.00')
 
@@ -135,9 +169,7 @@ def process_sale(request):
             amount = Decimal(str(pay['amount']))
             method = pay['method']
 
-            SalePayment.objects.create(
-                sale=sale, payment_method=method, amount=amount, processed_by=user
-            )
+            SalePayment.objects.create(sale=sale, payment_method=method, amount=amount, processed_by=user)
             total_paid += amount
 
             if method == 'CASH':
@@ -147,34 +179,23 @@ def process_sale(request):
             elif method == 'CARD':
                 session.total_card_sales += amount
 
-        # Calculate Change
         change_due = max(Decimal('0.00'), total_paid - total_amount)
 
-        # --- THE FIX: BALANCING OVERPAYMENTS ---
-        # If the customer overpaid, we give them cash back.
-        # We must log this as a negative payment so our revenue matches the actual sale total.
         if change_due > 0:
             SalePayment.objects.create(
-                sale=sale,
-                payment_method='CASH',  # Change is always physical cash
-                amount=-change_due,
-                reference_id="CHANGE GIVEN",
-                processed_by=user
+                sale=sale, payment_method='CASH', amount=-change_due,
+                reference_id="CHANGE GIVEN", processed_by=user
             )
-            # Adjust the mathematical total_paid down to perfectly match the bill
             total_paid -= change_due
 
-        # Save Final Sale Financials
         sale.amount_paid = total_paid
         sale.change_due = change_due
         sale.save()
 
-        # Update the Cashier's Drawer (Subtracts the change we handed out)
-        net_cash_added = total_cash_tendered - change_due
-        session.total_cash_sales += net_cash_added
+        # Update Session & Customer Stats
+        session.total_cash_sales += (total_cash_tendered - change_due)
         session.save()
 
-        # Update Customer Stats
         if customer_id:
             try:
                 customer = Customer.objects.get(id=customer_id)
@@ -182,21 +203,10 @@ def process_sale(request):
                 customer.total_visits += 1
                 customer.last_visit_date = timezone.now()
                 customer.save()
-
-                # Send SMS Receipt
-                if customer.accepts_marketing_sms and SMSService:
-                    try:
-                        SMSService.send_receipt(sale)
-                    except Exception as sms_error:
-                        print(f"SMS Error: {sms_error}")
             except Customer.DoesNotExist:
                 pass
 
-        return JsonResponse({
-            'success': True,
-            'invoice_number': sale.invoice_number,
-            'sale_id': sale.id
-        })
+        return JsonResponse({'success': True, 'invoice_number': sale.invoice_number, 'sale_id': sale.id})
 
     except Exception as e:
         return JsonResponse({'success': False, 'message': str(e)}, status=400)

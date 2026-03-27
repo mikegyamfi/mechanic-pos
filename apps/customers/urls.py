@@ -13,4 +13,5 @@ urlpatterns = [
     # API for POS Integration
     path('api/search/', views.api_search_customers, name='api_search'),
     path('api/create/', views.api_create_customer, name='api_create'),
+    path('<int:pk>/statement/', views.customer_statement, name='statement'),
 ]

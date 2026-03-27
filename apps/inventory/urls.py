@@ -6,6 +6,11 @@ app_name = 'inventory'
 urlpatterns = [
     # Dashboard
     path('', views.inventory_dashboard, name='dashboard'),
+    path('shipments/new/', views.shipment_create, name='shipment_create'),
+    path('shipments/', views.shipment_list, name='shipment_list'),
+    path('shipments/<int:pk>/', views.shipment_detail, name='shipment_detail'),
+    path('shipments/<int:pk>/receive/', views.receive_shipment, name='receive_shipment'),
+    path('shipments/import/', views.import_shipment_preview, name='import_shipment'),
 
     # Operations
     path('receive/', views.receive_stock, name='receive_stock'),

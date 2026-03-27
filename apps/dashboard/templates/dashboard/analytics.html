@@ -29,6 +29,7 @@
             <p class="mb-0 text-muted"> viewing data for: <span class="badge bg-label-primary">{{ view_name }}</span></p>
         </div>
 
+        {% if user.role == 'OWNER' %}
         <div class="btn-group">
             <button type="button" class="btn btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="ri-store-2-line me-1"></i> Switch Location
@@ -46,6 +47,7 @@
                 {% endfor %}
             </ul>
         </div>
+        {% endif %}
     </div>
 
     <!-- Critical Alerts (Only show if needed) -->
@@ -65,7 +67,8 @@
     <div class="col-xl-12">
         <div class="card h-100">
             <div class="card-body row g-4">
-                <div class="col-md-3 card-separator">
+
+                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %} card-separator">
                     <div class="d-flex align-items-center mb-2">
                         <div class="avatar me-4">
                             <div class="avatar-initial bg-label-primary rounded shadow-xs">
@@ -73,12 +76,13 @@
                             </div>
                         </div>
                         <div>
-                            <h5 class="mb-0 fw-bold">{{ revenue|intcomma }}</h5>
+                            <h5 class="mb-0 fw-bold">{{ revenue|floatformat:2|intcomma }}</h5>
                             <small class="text-muted">Today's Revenue</small>
                         </div>
                     </div>
                 </div>
 
+                {% if show_profit %}
                 <div class="col-md-3 card-separator">
                     <div class="d-flex align-items-center mb-2">
                         <div class="avatar me-4">
@@ -87,13 +91,14 @@
                             </div>
                         </div>
                         <div>
-                            <h5 class="mb-0 fw-bold">{{ profit|intcomma }}</h5>
+                            <h5 class="mb-0 fw-bold">{{ profit|floatformat:2|intcomma }}</h5>
                             <small class="text-muted">Est. Gross Profit</small>
                         </div>
                     </div>
                 </div>
+                {% endif %}
 
-                <div class="col-md-3 card-separator">
+                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %} card-separator">
                     <div class="d-flex align-items-center mb-2">
                         <div class="avatar me-4">
                             <div class="avatar-initial bg-label-info rounded shadow-xs">
@@ -107,7 +112,7 @@
                     </div>
                 </div>
 
-                <div class="col-md-3">
+                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %}">
                     <div class="d-flex align-items-center mb-2">
                         <div class="avatar me-4">
                             <div class="avatar-initial bg-label-warning rounded shadow-xs">
@@ -115,11 +120,12 @@
                             </div>
                         </div>
                         <div>
-                            <h5 class="mb-0 fw-bold">{{ cash_in_hand|intcomma }}</h5>
+                            <h5 class="mb-0 fw-bold">{{ cash_in_hand|floatformat:2|intcomma }}</h5>
                             <small class="text-muted">Cash in Drawers</small>
                         </div>
                     </div>
                 </div>
+
             </div>
         </div>
     </div>
@@ -158,7 +164,7 @@
                                 <small class="text-muted">Physical Cash</small>
                             </div>
                             <div class="user-progress">
-                                <h6 class="mb-0">{{ cash_in_hand|intcomma }}</h6>
+                                <h6 class="mb-0">{{ cash_in_hand|floatformat:2|intcomma }}</h6>
                             </div>
                         </div>
                     </li>
@@ -172,7 +178,7 @@
                                 <small class="text-muted">Electronic</small>
                             </div>
                             <div class="user-progress">
-                                <h6 class="mb-0">{{ digital_sales|intcomma }}</h6>
+                                <h6 class="mb-0">{{ digital_sales|floatformat:2|intcomma }}</h6>
                             </div>
                         </div>
                     </li>
@@ -259,7 +265,7 @@
                             fontSize: '1.5rem',
                             fontWeight: 'bold',
                             formatter: function (val) {
-                                return parseInt(val).toLocaleString();
+                                return parseFloat(val).toLocaleString();
                             }
                         },
                         total: {

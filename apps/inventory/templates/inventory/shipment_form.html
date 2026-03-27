@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block title %}New Container | Retail POS{% endblock %}
+
+{% block content %}
+<div class="container-xxl flex-grow-1 container-p-y">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0 text-white"><i class="ri-ship-line me-2"></i>Register New Container</h5>
+                </div>
+                <div class="card-body mt-4">
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Container / Reference Number</label>
+                                <input type="text" name="reference_number" class="form-control" required placeholder="e.g. LSA20251018">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Supplier Name</label>
+                                <input type="text" name="supplier_name" class="form-control" required placeholder="e.g. LIAN SHENG IMP/EXP">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Date Shipped (Optional)</label>
+                                <input type="date" name="date_shipped" class="form-control">
+                            </div>
+
+                            <hr class="my-4">
+                            <h6 class="text-primary mb-2">Financials & Logistics</h6>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Exchange Rate (GHS to 1 USD)</label>
+                                <input type="number" step="0.0001" name="exchange_rate" class="form-control border-success" required placeholder="e.g. 14.50">
+                                <small class="text-muted">Rate used for clearing/duty.</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Total Freight & Clearing (USD)</label>
+                                <input type="number" step="0.01" name="total_freight_usd" class="form-control border-danger" required placeholder="e.g. 3750.00">
+                                <small class="text-muted">Total logistics cost.</small>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Total Volume (CBM)</label>
+                                <input type="number" step="0.01" name="total_cbm" class="form-control" required placeholder="e.g. 99.75">
+                                <small class="text-muted">Total CBM of the container.</small>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 d-flex justify-content-end gap-2">
+                            <a href="{% url 'inventory:shipment_list' %}" class="btn btn-label-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">Save Container</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

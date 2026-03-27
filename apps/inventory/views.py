@@ -1,3 +1,6 @@
+import json
+from decimal import Decimal
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -7,10 +10,96 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q, Sum
 
-from .models import StockBatch, StockTransfer, StockTransferItem, StockAdjustment
+from .models import StockBatch, StockTransfer, StockTransferItem, StockAdjustment, Shipment, ShipmentItem
 from .forms import StockReceiveForm, StockTransferForm, StockTransferItemForm, StockAdjustmentForm
 from apps.location.models import Location
+from apps.inventory.management.commands.import_shipment import parse_excel_to_preview, process_confirmed_import
+from ..products.models import Product
 from ..sales.models import SaleItem
+
+
+def shipment_list(request):
+    """View to see all imported containers."""
+    shipments = Shipment.objects.all().order_by('-created_at')
+    return render(request, 'inventory/shipment_list.html', {'shipments': shipments})
+
+
+def shipment_create(request):
+    """View to create a brand-new container/shipment."""
+    if request.method == 'POST':
+        reference_number = request.POST.get('reference_number')
+        supplier_name = request.POST.get('supplier_name')
+        date_shipped = request.POST.get('date_shipped') or None
+        exchange_rate = request.POST.get('exchange_rate')
+        total_freight_usd = request.POST.get('total_freight_usd')
+        total_cbm = request.POST.get('total_cbm')
+
+        # Create the container
+        shipment = Shipment.objects.create(
+            reference_number=reference_number,
+            supplier_name=supplier_name,
+            date_shipped=date_shipped,
+            exchange_rate=exchange_rate,
+            total_freight_usd=total_freight_usd,
+            total_cbm=total_cbm
+        )
+        messages.success(request, f"Container {reference_number} created! Now add your items.")
+        return redirect('inventory:shipment_detail', pk=shipment.pk)
+
+    return render(request, 'inventory/shipment_form.html')
+
+
+def shipment_detail(request, pk):
+    """View to manage a specific container and add items to it."""
+    shipment = get_object_or_404(Shipment, pk=pk)
+    items = shipment.items.all()
+    products = Product.objects.all()  # For the dropdown
+
+    if request.method == 'POST':
+        # Adding a new item from the invoice to the container
+        product_id = request.POST.get('product_id')
+        quantity = int(request.POST.get('quantity', 0))
+        unit_cost_usd = Decimal(request.POST.get('unit_cost_usd', '0.00'))
+        total_line_cbm = Decimal(request.POST.get('total_line_cbm', '0.00'))
+        outside_sale_price_ghs = Decimal(request.POST.get('outside_sale_price_ghs', '0.00'))
+
+        product = get_object_or_404(Product, id=product_id)
+
+        ShipmentItem.objects.create(
+            shipment=shipment,
+            product=product,
+            quantity=quantity,
+            unit_cost_usd=unit_cost_usd,
+            total_line_cbm=total_line_cbm,
+            outside_sale_price_ghs=outside_sale_price_ghs
+        )
+        messages.success(request, f"Added {product.name} to the shipment.")
+        return redirect('inventory:shipment_detail', pk=shipment.pk)
+
+    context = {
+        'shipment': shipment,
+        'items': items,
+        'products': products
+    }
+    return render(request, 'inventory/shipment_detail.html', context)
+
+
+@transaction.atomic
+def receive_shipment(request, pk):
+    """The Magic Button: Pushes the container to live shop inventory."""
+    shipment = get_object_or_404(Shipment, pk=pk)
+
+    if request.method == 'POST':
+        try:
+            # Assuming the user is a manager receiving it at their assigned location
+            location = request.user.assigned_location
+            shipment.receive_into_stock(location=location, received_by=request.user)
+            messages.success(request,
+                             f"Shipment {shipment.reference_number} successfully received into stock! Prices have been updated.")
+        except Exception as e:
+            messages.error(request, f"Error receiving shipment: {str(e)}")
+
+    return redirect('inventory:shipment_detail', pk=shipment.pk)
 
 
 @login_required
@@ -444,3 +533,79 @@ def expiry_alerts(request):
         'expiring_batches': expiring_batches,
         'today': today
     })
+
+
+@login_required
+def import_shipment_preview(request):
+    """
+    Two-Step Excel Importer for Shipments.
+    Step 1: Upload & Preview (Reads CSV, returns JSON-like table).
+    Step 2: Commit (Saves to DB).
+    """
+    if request.user.role not in ['OWNER', 'MANAGER']:
+        messages.error(request, "You do not have permission to import shipments.")
+        return redirect('inventory:dashboard')
+
+    if request.method == 'POST':
+        # --- STEP 2: USER CLICKED CONFIRM ---
+        if 'confirm_import' in request.POST:
+            items_json = request.POST.get('items_json')
+            supplier = request.POST.get('supplier')
+            rate = request.POST.get('rate')
+            freight = request.POST.get('freight')
+            cbm = request.POST.get('cbm')
+
+            items = json.loads(items_json)
+
+            try:
+                shipment, p_created, i_added = process_confirmed_import(
+                    items, supplier, rate, freight, cbm
+                )
+                messages.success(request,
+                                 f"Import Success! Created {p_created} new products and added {i_added} items.")
+                # Redirect straight to the new shipment detail page!
+                return redirect('inventory:shipment_detail', pk=shipment.pk)
+            except Exception as e:
+                messages.error(request, f"Error saving to database: {str(e)}")
+                return redirect('inventory:import_shipment')
+
+        # --- STEP 1: USER UPLOADED FILE ---
+        else:
+            csv_file = request.FILES.get('csv_file')
+            if not csv_file:
+                messages.error(request, "Please upload a CSV file.")
+                return redirect('inventory:import_shipment')
+
+            supplier = request.POST.get('supplier', 'Lian Sheng')
+            rate = request.POST.get('rate', '13.00')
+            freight = request.POST.get('freight', '0.00')
+            cbm = request.POST.get('cbm', '0.00')
+
+            try:
+                # Magic function from our updated canvas file
+                items = parse_excel_to_preview(csv_file)
+            except Exception as e:
+                messages.error(request, f"Could not read file: {str(e)}")
+                return redirect('inventory:import_shipment')
+
+            new_count = sum(1 for i in items if i['status'] == 'NEW')
+            exists_count = sum(1 for i in items if i['status'] == 'EXISTS')
+
+            context = {
+                'preview_mode': True,
+                'items': items,
+                # We hide the parsed JSON in the form so it passes to Step 2
+                'items_json': json.dumps(items),
+                'supplier': supplier,
+                'rate': rate,
+                'freight': freight,
+                'cbm': cbm,
+                'new_count': new_count,
+                'exists_count': exists_count,
+            }
+            return render(request, 'inventory/import_excel.html', context)
+
+    # GET Request: Show empty upload form
+    return render(request, 'inventory/import_excel.html', {'preview_mode': False})
+
+

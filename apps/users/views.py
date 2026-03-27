@@ -38,6 +38,18 @@ class ForcePasswordChangeView(LoginRequiredMixin, PasswordChangeView):
         return super().form_valid(form)
 
 
+class UserPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
+    """
+    Voluntary password change for users who are already logged in.
+    """
+    template_name = 'users/change_password.html'
+    success_url = reverse_lazy('dashboard:index')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Your password was successfully updated!")
+        return super().form_valid(form)
+
+
 @login_required
 def staff_list(request):
     """

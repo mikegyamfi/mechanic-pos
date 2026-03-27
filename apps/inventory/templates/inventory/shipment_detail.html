@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Container Insights | Retail POS{% endblock %}
+
+{% block content %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+    <!-- Header: Shipment Global Variables -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-1">Container: <span class="text-primary">{{ shipment.reference_number }}</span></h4>
+            <span class="text-muted"><i class="ri-building-line me-1"></i> {{ shipment.supplier_name }}</span>
+        </div>
+        <div class="text-end">
+            <span class="badge {% if shipment.status == 'PENDING' %}bg-warning{% else %}bg-success{% endif %} fs-6 mb-2">
+                {{ shipment.get_status_display }}
+            </span>
+            <br>
+            <span class="fw-bold text-dark"><i class="ri-exchange-dollar-line me-1"></i> Exchange Rate: ₵{{ shipment.exchange_rate }} / $1</span>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- FINANCIAL PROJECTIONS DASHBOARD (JS Powered) -->
+    <!-- ========================================== -->
+    <div class="row g-4 mb-4">
+        <!-- Total Investment -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-start border-danger border-4 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted fw-bold text-uppercase fs-tiny">Total Investment (Cost)</span>
+                        <div class="avatar bg-label-danger rounded p-2"><i class="ri-shopping-cart-2-line ri-lg"></i></div>
+                    </div>
+                    <h3 class="mb-0 text-dark fw-bolder" id="summary-investment">₵0.00</h3>
+                    <small class="text-muted mt-1 d-block">Cost of goods in GHS</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Projected Revenue -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-start border-primary border-4 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted fw-bold text-uppercase fs-tiny">Projected Revenue</span>
+                        <div class="avatar bg-label-primary rounded p-2"><i class="ri-wallet-3-line ri-lg"></i></div>
+                    </div>
+                    <h3 class="mb-0 text-primary fw-bolder" id="summary-revenue">₵0.00</h3>
+                    <small class="text-muted mt-1 d-block">If all items are sold</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expected Profit -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-start border-success border-4 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted fw-bold text-uppercase fs-tiny">Expected Net Profit</span>
+                        <div class="avatar bg-label-success rounded p-2"><i class="ri-funds-line ri-lg"></i></div>
+                    </div>
+                    <h3 class="mb-0 text-success fw-bolder" id="summary-profit">₵0.00</h3>
+                    <small class="text-muted mt-1 d-block">Revenue minus Investment</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overall Margin -->
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-start border-info border-4 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted fw-bold text-uppercase fs-tiny">Average Margin</span>
+                        <div class="avatar bg-label-info rounded p-2"><i class="ri-pie-chart-2-line ri-lg"></i></div>
+                    </div>
+                    <h3 class="mb-0 text-info fw-bolder" id="summary-margin">0.0%</h3>
+                    <small class="text-muted mt-1 d-block">Overall profitability</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- The Invoice Items Table -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header border-bottom d-flex justify-content-between align-items-center bg-white">
+            <h5 class="card-title mb-0 fw-bold">Item Breakdown & Line Insights</h5>
+            <span class="text-muted small"><i class="ri-information-line me-1"></i> Math respects "Sold as Pair" logic for revenue.</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover table-striped mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Product Info</th>
+                        <th class="text-center">Total<br>Pieces</th>
+                        <th class="text-end">Unit Cost<br><small>(USD → GHS)</small></th>
+                        <th class="text-end border-end">Total Cost<br><small>(Investment)</small></th>
+                        <th class="text-end text-info">Selling Price<br><small>(Your Price)</small></th>
+                        <th class="text-end text-primary">Line Revenue<br><small>(Expected)</small></th>
+                        <th class="text-end text-success">Line Profit<br><small>(Expected)</small></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items %}
+                    <!-- We store the raw data attributes here so our Javascript engine can do the heavy lifting -->
+                    <tr class="item-row"
+                        data-qty="{{ item.quantity }}"
+                        data-cost-ghs="{{ item.total_landed_cost_ghs }}"
+                        data-is-pair="{{ item.product.is_sold_in_pairs }}"
+                        data-sale-price="{{ item.outside_sale_price_ghs }}">
+
+                        <td>
+                            <strong class="text-heading d-block mb-1">{{ item.product.name }}</strong>
+                            <small class="text-muted me-2">{{ item.product.sku }}</small>
+                            {% if item.product.is_sold_in_pairs %}
+                                <span class="badge bg-label-primary fs-tiny"><i class="ri-checkbox-multiple-line me-1"></i>PAIRED</span>
+                            {% else %}
+                                <span class="badge bg-label-secondary fs-tiny"><i class="ri-checkbox-blank-circle-line me-1"></i>SINGLE</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center align-middle fw-bold fs-5">{{ item.quantity }}</td>
+
+                        <td class="text-end align-middle">
+                            <span class="text-muted d-block">${{ item.unit_cost_usd }}</span>
+                            <span class="fw-bold">₵{{ item.unit_landed_cost_ghs|floatformat:2|intcomma }}</span>
+                        </td>
+
+                        <td class="text-end align-middle border-end bg-lighter">
+                            <span class="fw-bold text-dark">₵{{ item.total_landed_cost_ghs|floatformat:2|intcomma }}</span>
+                        </td>
+
+                        <td class="text-end align-middle">
+                            <span class="fw-bolder text-info d-block fs-5">₵{{ item.outside_sale_price_ghs|floatformat:2|intcomma }}</span>
+                            {% if item.product.is_sold_in_pairs %}
+                                <small class="text-muted">Per Pair (2 pcs)</small>
+                            {% else %}
+                                <small class="text-muted">Per Piece</small>
+                            {% endif %}
+                        </td>
+
+                        <!-- These columns are populated dynamically by JS based on the Pair logic -->
+                        <td class="text-end align-middle fw-bold text-primary fs-5 line-revenue">...</td>
+                        <td class="text-end align-middle fw-bold text-success fs-5 line-profit">...</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-center text-muted py-5"><i class="ri-inbox-line ri-3x mb-3 d-block"></i> No items in this container yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- The Receive Button -->
+    {% if shipment.status == 'PENDING' %}
+    <div class="card bg-dark text-white text-center p-4 shadow-lg border-0 rounded-4">
+        <div class="row align-items-center">
+            <div class="col-md-8 text-md-start mb-3 mb-md-0">
+                <h4 class="text-white mb-2"><i class="ri-ship-line text-info me-2"></i> Ready to move to shelves?</h4>
+                <p class="mb-0 text-white-50">Clicking receive will instantly update your inventory counts and lock in the new selling prices across the system.</p>
+            </div>
+            <div class="col-md-4 text-md-end">
+                <form method="POST" action="{% url 'inventory:receive_shipment' shipment.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success btn-lg px-5 py-3 fw-bold rounded-pill shadow" onclick="return confirm('Are you sure? This will push all items to the shelf and update prices.')">
+                        <i class="ri-check-double-line me-1"></i> RECEIVE CONTAINER
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        let totalInvestment = 0;
+        let totalRevenue = 0;
+
+        // Loop through every item row in the table
+        document.querySelectorAll('.item-row').forEach(row => {
+            // Extract the raw data we saved in the HTML
+            let qty = parseFloat(row.dataset.qty) || 0;
+            let totalCostGhs = parseFloat(row.dataset.costGhs) || 0;
+            let isPair = row.dataset.isPair === 'True';
+            let salePrice = parseFloat(row.dataset.salePrice) || 0;
+
+            // --- THE CRITICAL REVENUE MATH ---
+            // If it's a paired product, the sale price is for 2 pieces.
+            // So expected revenue = (Total Pieces / 2) * Pair Sale Price
+            let lineRevenue = isPair ? (qty / 2) * salePrice : qty * salePrice;
+
+            // Line Profit = What we sell it for - What we bought it for
+            let lineProfit = lineRevenue - totalCostGhs;
+
+            // Add to Grand Totals
+            totalInvestment += totalCostGhs;
+            totalRevenue += lineRevenue;
+
+            // Update the specific row's UI dynamically
+            row.querySelector('.line-revenue').innerText = '₵' + lineRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            row.querySelector('.line-profit').innerText = '₵' + lineProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        });
+
+        // Calculate Grand Totals
+        let totalProfit = totalRevenue - totalInvestment;
+        let overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+        // Update the Big Dashboard Cards
+        document.getElementById('summary-investment').innerText = '₵' + totalInvestment.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('summary-revenue').innerText = '₵' + totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('summary-profit').innerText = '₵' + totalProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        document.getElementById('summary-margin').innerText = overallMargin.toFixed(1) + '%';
+    });
+</script>
+{% endblock %}

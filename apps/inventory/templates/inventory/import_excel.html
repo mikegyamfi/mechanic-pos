@@ -1,0 +1,153 @@
+{% extends 'base.html' %}
+{% load static humanize %}
+
+{% block title %}Import Shipment Excel | Retail POS{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-12">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    {% if preview_mode %}Step 2: Preview & Confirm{% else %}Step 1: Upload Supplier Invoice{% endif %}
+                </h5>
+                <a href="{% url 'inventory:shipment_list' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="ri-close-line me-1"></i> Cancel
+                </a>
+            </div>
+
+            <div class="card-body pt-3">
+                {% if not preview_mode %}
+                <!-- ============================================== -->
+                <!-- STEP 1: THE UPLOAD FORM                        -->
+                <!-- ============================================== -->
+                <div class="alert alert-primary d-flex align-items-center" role="alert">
+                    <i class="ri-file-excel-2-line ri-2x me-3"></i>
+                    <div>
+                        <strong>Instructions:</strong> Please ensure your Excel file is saved as a <strong>CSV (Comma Delimited)</strong> format before uploading. The system will intelligently auto-categorize products based on their names.
+                    </div>
+                </div>
+
+                <form method="post" enctype="multipart/form-data" class="mt-4">
+                    {% csrf_token %}
+                    <div class="row g-4">
+                        <div class="col-md-12">
+                            <label class="form-label fw-bold">Upload CSV File</label>
+                            <input type="file" name="csv_file" class="form-control form-control-lg" required>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Supplier Name</label>
+                            <input type="text" name="supplier" class="form-control" value="Lian Sheng (Xiamen)" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Exchange Rate (GHS to USD)</label>
+                            <input type="number" step="0.01" name="rate" class="form-control" value="13.00" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Total Freight / Clearing (USD) <small class="text-muted">Optional</small></label>
+                            <input type="number" step="0.01" name="freight" class="form-control" value="0.00">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Total Container CBM <small class="text-muted">Optional</small></label>
+                            <input type="number" step="0.01" name="cbm" class="form-control" value="0.00">
+                        </div>
+                    </div>
+                    <div class="mt-4 border-top pt-3 text-end">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="ri-eye-line me-1"></i> Scan & Preview Data
+                        </button>
+                    </div>
+                </form>
+
+                {% else %}
+                <!-- ============================================== -->
+                <!-- STEP 2: THE PREVIEW DASHBOARD                  -->
+                <!-- ============================================== -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="p-3 bg-label-success rounded text-center">
+                            <h3 class="mb-0 text-success">{{ new_count }}</h3>
+                            <small class="fw-bold">NEW PRODUCTS TO CREATE</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-label-info rounded text-center">
+                            <h3 class="mb-0 text-info">{{ exists_count }}</h3>
+                            <small class="fw-bold">EXISTING PRODUCTS TO UPDATE</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 bg-label-primary rounded text-center">
+                            <h3 class="mb-0 text-primary">{{ items|length }}</h3>
+                            <small class="fw-bold">TOTAL ITEMS IN SHIPMENT</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive border rounded mb-4" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover table-sm">
+                        <thead class="table-dark" style="position: sticky; top: 0; z-index: 1;">
+                            <tr>
+                                <th>Status</th>
+                                <th>Category</th>
+                                <th>SKU</th>
+                                <th>Description</th>
+                                <th class="text-center">Pieces</th>
+                                <th class="text-center">Paired?</th>
+                                <th class="text-end">Outside Sale</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td>
+                                    {% if item.status == 'NEW' %}
+                                        <span class="badge bg-success">NEW</span>
+                                    {% else %}
+                                        <span class="badge bg-info">EXISTS</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-label-secondary">{{ item.category }}</span></td>
+                                <td><strong>{{ item.sku }}</strong></td>
+                                <td>{{ item.description }}</td>
+                                <td class="text-center fw-bold">{{ item.pieces }}</td>
+                                <td class="text-center">
+                                    {% if item.is_pair %}
+                                        <i class="ri-checkbox-fill text-success">Yes</i>
+                                    {% else %}
+                                        <i class="ri-close-circle-line text-muted">No</i>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-bold text-primary">{{ item.outside_sale }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Commit Form -->
+                <form method="post" class="d-flex justify-content-between align-items-center border-top pt-3 mt-3">
+                    {% csrf_token %}
+                    <!-- Hidden Payload -->
+                    <input type="hidden" name="items_json" value="{{ items_json }}">
+                    <input type="hidden" name="supplier" value="{{ supplier }}">
+                    <input type="hidden" name="rate" value="{{ rate }}">
+                    <input type="hidden" name="freight" value="{{ freight }}">
+                    <input type="hidden" name="cbm" value="{{ cbm }}">
+
+                    <span class="text-muted"><i class="ri-error-warning-line me-1"></i> Please review carefully. This will write to the live database.</span>
+
+                    <div>
+                        <a href="{% url 'inventory:import_shipment' %}" class="btn btn-outline-danger me-2">Cancel / Restart</a>
+                        <button type="submit" name="confirm_import" class="btn btn-success btn-lg shadow-sm">
+                            <i class="ri-save-line me-1"></i> Confirm & Import Shipment
+                        </button>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

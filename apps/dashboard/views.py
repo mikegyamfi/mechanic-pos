@@ -1,10 +1,9 @@
-from datetime import timedelta
-
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
-from django.http import HttpResponseForbidden
+from datetime import timedelta
+from decimal import Decimal
 
 from apps.analytics.models import DailyShopSummary
 from apps.sales.models import Sale, SalePayment
@@ -20,103 +19,127 @@ def dashboard_router(request):
     """
     user = request.user
 
-    # 1. Cashiers & Salespeople -> Go straight to POS/Sales
+    # 1. Cashiers & Salespeople -> Now authorized to see their performance dashboard
     if user.role in ['CASHIER', 'SALESPERSON']:
-        # If they haven't opened a register session, the POS view will handle that check
-        # return redirect('sales:pos')
         return redirect('dashboard:analytics')
 
     # 2. Warehouse Staff -> Go to Inventory Ops
     elif user.role == 'WAREHOUSE_STAFF':
-        return redirect('dashboard:analytics')
+        return redirect('inventory:dashboard')
 
     # 3. Owners, Managers, Accountants -> Go to Analytics
-    elif user.role in ['OWNER', 'MANAGER', 'ACCOUNTANT'] or user.is_superuser:
+    elif user.role in ['OWNER', 'MANAGER', 'ACCOUNTANT']:
         return redirect('dashboard:analytics')
 
-    else:
-        return HttpResponseForbidden()
+    # Fallback
+    return render(request, 'core/welcome.html')
 
 
 @login_required
 def owner_analytics(request):
     """
-    Phase 2: The Data Engine (Owner's View).
-    Aggregates data for the 'God Mode' dashboard.
+    Phase 2: The Data Engine (Owner & Staff View).
+    Aggregates data for the dashboard. Data visibility depends on Role.
     """
     user = request.user
-    if user.role not in ['OWNER', 'MANAGER', 'ACCOUNTANT']:
+
+    # Now explicitly allowing front-line staff
+    if user.role not in ['OWNER', 'MANAGER', 'ACCOUNTANT', 'CASHIER', 'SALESPERSON']:
         return redirect('dashboard:index')
 
     today = timezone.now().date()
 
-    # --- Context Switching Logic ---
-    # Check if the user is filtering by a specific location
-    selected_location_id = request.GET.get('location')
+    # --- 1. Context Switching & Scope Logic ---
     locations = Location.objects.filter(is_active=True)
+    selected_location_id = request.GET.get('location')
 
-    if selected_location_id:
-        analytics_scope = locations.filter(id=selected_location_id)
-        current_view_name = analytics_scope.first().name
+    if user.role == 'OWNER':
+        if selected_location_id:
+            analytics_scope = locations.filter(id=selected_location_id)
+            current_view_name = analytics_scope.first().name if analytics_scope.exists() else "All Locations"
+        else:
+            analytics_scope = locations
+            current_view_name = "All Locations"
     else:
-        # Default: View All
-        analytics_scope = locations
-        current_view_name = "All Locations"
+        # Everyone else is locked to their assigned location
+        if user.assigned_location:
+            analytics_scope = locations.filter(id=user.assigned_location.id)
+            current_view_name = user.assigned_location.name
+            selected_location_id = user.assigned_location.id
+        else:
+            analytics_scope = Location.objects.none()
+            current_view_name = "Unassigned Location"
 
-    # --- 1. The Big Numbers (Today) ---
-    # We aggregate real-time sales for TODAY (Live Pulse)
-    todays_sales = Sale.objects.filter(
+    # --- 2. Base Querysets ---
+    sales_qs = Sale.objects.filter(
         created_at__date=today,
         status=Sale.Status.COMPLETED,
         location__in=analytics_scope
-    ).aggregate(
+    )
+
+    payments_qs = SalePayment.objects.filter(
+        created_at__date=today,
+        sale__location__in=analytics_scope
+    )
+
+    start_date = today - timedelta(days=6)
+    historical_sales_qs = Sale.objects.filter(
+        location__in=analytics_scope,
+        created_at__date__gte=start_date,
+        status=Sale.Status.COMPLETED
+    )
+
+    # --- 3. Role-Specific Filters ---
+    # If Cashier or Salesperson, they ONLY see their own transactions and revenue
+    is_admin_role = user.role in ['OWNER', 'MANAGER', 'ACCOUNTANT']
+
+    if not is_admin_role:
+        sales_qs = sales_qs.filter(cashier=user)
+        payments_qs = payments_qs.filter(processed_by=user)
+        historical_sales_qs = historical_sales_qs.filter(cashier=user)
+        current_view_name = f"My Sales ({current_view_name})"
+
+    # --- 4. The Big Numbers (Today) ---
+    todays_sales = sales_qs.aggregate(
         revenue=Sum('total_amount'),
         transactions=Count('id'),
         profit=Sum('items__total_price') - Sum('items__unit_cost')  # Simplified Gross Profit
     )
 
-    # --- 2. Cash Flow (Money in Hand) ---
-    # Sum of payments collected today (Cash vs Digital)
-    payments = SalePayment.objects.filter(
-        created_at__date=today,
-        sale__location__in=analytics_scope
-    ).aggregate(
+    # Strictly format to 2 decimal places
+    revenue = Decimal(str(todays_sales['revenue'] or '0.00')).quantize(Decimal('0.01'))
+    profit = Decimal(str(todays_sales['profit'] or '0.00')).quantize(Decimal('0.01'))
+    transactions = todays_sales['transactions'] or 0
+
+    # --- 5. Cash Flow (Money in Hand) ---
+    payments = payments_qs.aggregate(
         cash=Sum('amount', filter=Q(payment_method='CASH')),
         digital=Sum('amount', filter=~Q(payment_method='CASH'))
     )
 
-    # --- 3. Critical Alerts ---
+    # Strictly format to 2 decimal places
+    cash_in_hand = Decimal(str(payments['cash'] or '0.00')).quantize(Decimal('0.01'))
+    digital_sales = Decimal(str(payments['digital'] or '0.00')).quantize(Decimal('0.01'))
+
+    # --- 6. Critical Alerts (Location-wide, not user specific) ---
     low_stock_count = StockBatch.objects.filter(
         location__in=analytics_scope,
-        quantity__lte=5  # Hardcoded threshold, should come from settings
+        quantity__lte=5
     ).count()
 
-    # --- 4. Chart Data (Last 7 Days) ---
-    # UPDATED: We now query the Sale table directly for real-time updates.
-    # This replaces the DailyShopSummary lookup which required an end-of-day process.
-
-    start_date = today - timedelta(days=6)
-
-    # Get sales grouped by date
-    sales_data = Sale.objects.filter(
-        location__in=analytics_scope,
-        created_at__date__gte=start_date,
-        status=Sale.Status.COMPLETED
-    ).values('created_at__date').annotate(
+    # --- 7. Chart Data (Last 7 Days) ---
+    sales_data = historical_sales_qs.values('created_at__date').annotate(
         total=Sum('total_amount')
     ).order_by('created_at__date')
 
-    # Convert DB result to a Dictionary for easy lookup: { '2023-10-01': 500.00 }
     sales_map = {item['created_at__date']: item['total'] for item in sales_data}
 
     chart_labels = []
     chart_data = []
 
-    # Loop through the last 7 days to ensure even days with 0 sales show up on the chart
     for i in range(6, -1, -1):
         date = today - timedelta(days=i)
-        chart_labels.append(date.strftime('%a'))  # Mon, Tue, Wed...
-        # Get amount from map or default to 0
+        chart_labels.append(date.strftime('%a'))
         amount = sales_map.get(date, 0)
         chart_data.append(float(amount))
 
@@ -125,14 +148,17 @@ def owner_analytics(request):
         'selected_location_id': int(selected_location_id) if selected_location_id else None,
         'view_name': current_view_name,
 
+        # Security Flag for UI
+        'show_profit': is_admin_role,
+
         # Big Cards
-        'revenue': todays_sales['revenue'] or 0,
-        'transactions': todays_sales['transactions'] or 0,
-        'profit': todays_sales['profit'] or 0,
+        'revenue': revenue,
+        'transactions': transactions,
+        'profit': profit,
 
         # Cash Flow
-        'cash_in_hand': payments['cash'] or 0,
-        'digital_sales': payments['digital'] or 0,
+        'cash_in_hand': cash_in_hand,
+        'digital_sales': digital_sales,
 
         # Alerts
         'low_stock_count': low_stock_count,
@@ -143,5 +169,3 @@ def owner_analytics(request):
     }
 
     return render(request, 'dashboard/analytics.html', context)
-
-

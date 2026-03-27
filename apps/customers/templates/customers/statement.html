@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Account Statement - {{ customer.get_display_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Print specific styles so it looks perfect on paper */
+    @media print {
+        body { background-color: white !important; }
+        .layout-navbar, .layout-menu, .footer, .btn-print, .breadcrumbs { display: none !important; }
+        .content-wrapper { padding: 0 !important; margin: 0 !important; }
+        .card { border: none !important; box-shadow: none !important; }
+        .print-container { padding: 20px !important; }
+    }
+    .invoice-header { border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 30px; }
+    .company-details h2 { font-weight: 800; color: #2c3e50; margin-bottom: 5px; }
+    .statement-title { font-size: 2rem; font-weight: 700; color: #cc0000; text-transform: uppercase; letter-spacing: 2px; }
+    .summary-box { background: #f8f9fa; border-left: 5px solid #cc0000; padding: 15px; border-radius: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-xxl flex-grow-1 container-p-y print-container">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 breadcrumbs">
+        <h4 class="fw-bold py-3 mb-0">Mechanic Accounts</h4>
+        <button onclick="window.print()" class="btn btn-primary btn-print">
+            <i class="ri-printer-line me-1"></i> Print / Save PDF
+        </button>
+    </div>
+
+    <div class="card p-5">
+        <!-- Header -->
+        <div class="invoice-header d-flex justify-content-between">
+            <div class="company-details">
+                <h2>{{ request.user.assigned_location.name|upper }}</h2>
+                <p class="mb-0">{{ request.user.assigned_location.address }}</p>
+                <p class="mb-0">Tel: {{ request.user.assigned_location.phone_number }}</p>
+                <p class="mb-0 text-muted">Date Generated: {% now "d M Y, H:i" %}</p>
+            </div>
+            <div class="text-end">
+                <div class="statement-title">STATEMENT OF ARREARS</div>
+                <h5 class="mt-3 fw-bold text-dark">To:</h5>
+                <p class="mb-0 fw-bold fs-5">{{ customer.get_display_name }}</p>
+                <p class="mb-0">{{ customer.phone_number }}</p>
+            </div>
+        </div>
+
+        <!-- Financial Summary -->
+        <div class="row mb-5">
+            <div class="col-md-6">
+                <div class="summary-box">
+                    <h6 class="text-uppercase text-muted mb-1">Total Outstanding Balance</h6>
+                    <h2 class="text-danger fw-bolder mb-0">₵{{ customer.current_debt|intcomma }}</h2>
+                </div>
+            </div>
+            <div class="col-md-6 text-end">
+                <p class="mb-1 text-muted">Credit Limit: <strong>₵{{ customer.credit_limit|intcomma }}</strong></p>
+                <p class="mb-0 text-muted">Available Credit: <strong>₵{{ customer.available_credit|intcomma }}</strong></p>
+            </div>
+        </div>
+
+        <!-- Breakdown Table -->
+        <h5 class="fw-bold mb-3 border-bottom pb-2">Unpaid Invoices Breakdown</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Date</th>
+                        <th>Invoice #</th>
+                        <th class="text-end">Total Bill (GHS)</th>
+                        <th class="text-end">Amount Paid (GHS)</th>
+                        <th class="text-end text-warning">Balance Due (GHS)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sale in unpaid_invoices %}
+                    <tr>
+                        <td>{{ sale.created_at|date:"d M Y" }}</td>
+                        <td class="fw-bold">
+                            <a href="{% url 'sales:detail' sale.pk %}" class="text-decoration-none text-dark">
+                                #{{ sale.invoice_number|slice:":8" }}
+                            </a>
+                        </td>
+                        <td class="text-end">{{ sale.total_amount|intcomma }}</td>
+                        <td class="text-end">{{ sale.amount_paid|intcomma }}</td>
+                        <td class="text-end fw-bold text-danger">
+                            <!-- Math: Total Amount - Amount Paid = Debt on this specific invoice -->
+                            {{ sale.total_amount|add:"-"|add:sale.amount_paid|intcomma }}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-success fw-bold">
+                            <i class="ri-check-double-line ri-2x mb-2"></i><br>
+                            This account is fully settled. No arrears.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                {% if unpaid_invoices %}
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="4" class="text-end fs-5">TOTAL ARREARS DUE:</th>
+                        <th class="text-end fs-5 text-danger fw-bolder">₵{{ customer.current_debt|intcomma }}</th>
+                    </tr>
+                </tfoot>
+                {% endif %}
+            </table>
+        </div>
+
+        <!-- Footer Notes -->
+        <div class="mt-5 pt-3 border-top text-center text-muted small">
+            <p class="mb-1">Please make payment for the outstanding balance as soon as possible.</p>
+            <p class="mb-0">For any discrepancies, please contact the shop manager immediately with your original receipts.</p>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

@@ -244,9 +244,10 @@
                     {% endif %}
                 </div>
                 <div class="progress" style="height: 8px;">
+                    <!-- FIX: Prevents negative width value which breaks CSS rendering -->
                     <div class="progress-bar {% if net_profit >= 0 %}bg-success{% else %}bg-danger{% endif %}"
                          role="progressbar"
-                         style="width: {% if total_revenue > 0 %}{% widthratio net_profit total_revenue 100 %}{% else %}0{% endif %}%">
+                         style="width: {% if total_revenue > 0 and net_profit > 0 %}{% widthratio net_profit total_revenue 100 %}{% else %}0{% endif %}%">
                     </div>
                 </div>
             </div>
@@ -259,8 +260,8 @@
 <script src="{% static 'assets/vendor/libs/apex-charts/apexcharts.js' %}"></script>
 <script>
     {% if total_expenses > 0 %}
-    // Parse Django Data for Chart
-    const categories = [{% for exp in expense_breakdown %}"{{ exp.category__name }}",{% endfor %}];
+    // FIX: Added escapejs to prevent quotes in category names from crashing the chart script
+    const categories = [{% for exp in expense_breakdown %}"{{ exp.category__name|escapejs }}",{% endfor %}];
     const amounts = [{% for exp in expense_breakdown %}{{ exp.total }},{% endfor %}];
 
     const chartOptions = {

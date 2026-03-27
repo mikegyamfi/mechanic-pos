@@ -111,6 +111,15 @@ class Product(BaseRetailModel):
     manufacturer_part_number = models.CharField(max_length=100, blank=True)
     shelf_location = models.CharField(max_length=100, blank=True, help_text="General shelf location hint")
 
+    is_sold_in_pairs = models.BooleanField(
+        default=False,
+        help_text="Check this if the item is imported as a pair (like Headlights or Shocks)."
+    )
+    single_piece_price = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Premium price if a customer breaks the pair and buys only one side."
+    )
+
     def save(self, *args, **kwargs):
         if not self.slug:
             # Ensure uniqueness by appending the already unique SKU

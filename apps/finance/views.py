@@ -1,13 +1,14 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Sum, F
+from django.db.models import Sum, F, ExpressionWrapper, DecimalField
 from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
 
 from .models import Expense, Tax
 from .forms import ExpenseForm
-from ..sales.models import SaleTax, Sale, SaleItem
+from apps.sales.models import SaleTax, Sale, SaleItem
 
 
 @login_required
@@ -33,7 +34,7 @@ def expense_list(request):
     total_month = expenses.filter(
         date_incurred__gte=month_start,
         status=Expense.Status.APPROVED
-    ).aggregate(Sum('amount'))['amount__sum'] or 0
+    ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0.00')
 
     pending_count = expenses.filter(status=Expense.Status.PENDING).count()
 
@@ -142,25 +143,32 @@ def profit_loss_view(request):
     expenses_qs = expenses_qs.filter(date_incurred__range=[start_date, end_date])
 
     # 1. Total Revenue
-    total_revenue = sales_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    total_revenue = Decimal(str(sales_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or '0.00')).quantize(Decimal('0.01'))
 
     # 2. Cost of Goods Sold (COGS)
-    # Calculated from unit_cost stored on SaleItem at time of sale
-    total_cogs = items_qs.annotate(
-        line_cost=F('unit_cost') * F('quantity')
-    ).aggregate(Sum('line_cost'))['line_cost__sum'] or 0
+    total_cogs_raw = items_qs.annotate(
+        line_cost=ExpressionWrapper(
+            F('unit_cost') * F('quantity'),
+            output_field=DecimalField()
+        )
+    ).aggregate(Sum('line_cost'))['line_cost__sum'] or '0.00'
+    total_cogs = Decimal(str(total_cogs_raw)).quantize(Decimal('0.01'))
 
     # 3. Gross Profit
-    gross_profit = total_revenue - total_cogs
+    gross_profit = (total_revenue - total_cogs).quantize(Decimal('0.01'))
 
     # 4. Expenses
-    total_expenses = expenses_qs.aggregate(Sum('amount'))['amount__sum'] or 0
+    total_expenses = Decimal(str(expenses_qs.aggregate(Sum('amount'))['amount__sum'] or '0.00')).quantize(Decimal('0.01'))
 
     # 5. Net Profit
-    net_profit = gross_profit - total_expenses
+    net_profit = (gross_profit - total_expenses).quantize(Decimal('0.01'))
 
     # Expense Breakdown for Charts/Table
-    expense_breakdown = expenses_qs.values('category__name').annotate(total=Sum('amount')).order_by('-total')
+    expense_breakdown_raw = expenses_qs.values('category__name').annotate(total=Sum('amount')).order_by('-total')
+    expense_breakdown = [
+        {'category__name': exp['category__name'], 'total': Decimal(str(exp['total'])).quantize(Decimal('0.01'))}
+        for exp in expense_breakdown_raw
+    ]
 
     context = {
         'start_date': start_date.strftime("%Y-%m-%d"),
@@ -200,7 +208,7 @@ def tax_report_view(request):
     # Summarize by Tax Name (VAT, NHIL, etc.)
     tax_summary = tax_qs.values('tax_name', 'tax_rate').annotate(total_collected=Sum('tax_amount')).order_by('tax_name')
 
-    total_tax_collected = tax_qs.aggregate(Sum('tax_amount'))['tax_amount__sum'] or 0
+    total_tax_collected = tax_qs.aggregate(Sum('tax_amount'))['tax_amount__sum'] or Decimal('0.00')
 
     context = {
         'start_date': start_date,
@@ -209,6 +217,3 @@ def tax_report_view(request):
         'total_tax_collected': total_tax_collected
     }
     return render(request, 'finance/tax_report.html', context)
-
-
-
