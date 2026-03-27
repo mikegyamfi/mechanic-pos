@@ -5,11 +5,18 @@ DEBUG = True
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'abosseyokai-hub-a4e53ad7e19b.herokuapp.com']
 
 # Database for development
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+import dj_database_url
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL')
+    )
 }
 
 # Email Backend for development (prints to console)
