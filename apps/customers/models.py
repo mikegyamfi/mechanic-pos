@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from apps.core.models import BaseRetailModel, TimeStampedModel
+from apps.core.money import D, ZERO, q2
 
 
 class Customer(BaseRetailModel):
@@ -47,34 +48,83 @@ class Customer(BaseRetailModel):
         help_text="Maximum amount this person is allowed to owe. 0 means no credit allowed."
     )
 
+    def unpaid_invoices(self):
+        """
+        Invoices with money still outstanding.
+
+        NOTE: the reverse accessor for Sale.customer is `purchases`, not
+        `sales` -- using the wrong one raised AttributeError inside the credit
+        check and blocked every credit sale.
+        """
+        from django.db.models import F
+        from apps.sales.models import Sale
+
+        return self.purchases.filter(
+            status__in=Sale.REVENUE_STATUSES,
+        ).annotate(
+            outstanding=F('total_amount') - F('refunded_amount') - F('amount_paid')
+        ).filter(outstanding__gt=0)
+
     @property
     def current_debt(self):
-        """Calculates exactly how much they owe right now based on their unpaid invoices"""
-        from apps.sales.models import Sale
-        from django.db.models import Sum, F
+        """Exactly what they owe right now, net of anything they returned."""
+        from django.db.models import Sum
 
-        # Find all sales where amount_paid is less than total_amount
-        debts = self.sales.filter(amount_paid__lt=F('total_amount')).aggregate(
-            total_owed=Sum(F('total_amount') - F('amount_paid'))
-        )
-        return debts['total_owed'] or Decimal('0.00')
+        owed = self.unpaid_invoices().aggregate(total=Sum('outstanding'))['total']
+        return q2(owed or 0)
 
     @property
     def available_credit(self):
         """How much more can they take on credit before hitting their limit?"""
-        return self.credit_limit - self.current_debt
+        return q2(D(self.credit_limit) - self.current_debt)
+
+    @property
+    def is_over_limit(self):
+        return self.current_debt > D(self.credit_limit)
+
+    def recalculate_lifetime_stats(self, save=True):
+        """
+        Rebuild total_spent / total_visits from the invoices themselves.
+
+        Incrementing these with `+=` loses updates when two tills serve the
+        same mechanic at once, and never reverses on a refund.
+        """
+        from django.db.models import Count, Sum
+        from apps.sales.models import Sale
+
+        agg = self.purchases.filter(status__in=Sale.REVENUE_STATUSES).aggregate(
+            spent=Sum('total_amount'),
+            refunded=Sum('refunded_amount'),
+            visits=Count('id'),
+            last=models.Max('created_at'),
+        )
+        self.total_spent = q2(D(agg['spent'] or 0) - D(agg['refunded'] or 0))
+        self.total_visits = agg['visits'] or 0
+        self.last_visit_date = agg['last']
+        if save:
+            self.save(update_fields=['total_spent', 'total_visits', 'last_visit_date'])
+        return self
 
     class Meta:
         ordering = ['-last_visit_date']
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name} ({self.phone_number})".strip()
+        return self.display_name
 
     @property
+    def display_name(self):
+        """Best human label we have: workshop, then name, then phone."""
+        if self.workshop_name:
+            return self.workshop_name
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        if full_name:
+            return full_name
+        return self.phone_number or "Walk-in Customer"
+
+    # Kept for existing templates/views that reference `get_display_name`.
+    @property
     def get_display_name(self):
-        if self.first_name:
-            return f"{self.first_name} {self.last_name}"
-        return "Valued Customer"
+        return self.display_name
 
 
 class CustomerGroup(TimeStampedModel):

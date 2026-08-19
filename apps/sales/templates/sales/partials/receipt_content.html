@@ -1,39 +1,56 @@
 {% load humanize %}
+{% with shop=location|default:sale.location %}
 <!-- Header -->
 <div class="print-center">
-    <div class="print-lg print-bold">{{ user.assigned_location.name|upper }}</div>
-    <div>{{ user.assigned_location.address }}</div>
-    <div>Tel: {{ user.assigned_location.phone_number }}</div>
+    <div class="print-lg print-bold">{{ shop.name|upper }}</div>
+    <div>{{ shop.address }}</div>
+    {% if shop.phone_number %}<div>Tel: {{ shop.phone_number }}</div>{% endif %}
 </div>
 
 <div class="print-divider"></div>
 
 <!-- Meta -->
 <div class="print-row">
-    <span>Inv: #{{ sale.invoice_number|slice:":8" }}</span>
-    <span>{{ sale.created_at|date:"d/m/y H:i" }}</span>
+    <span>Inv: {{ sale.invoice_number }}</span>
 </div>
 <div class="print-row">
-    <span>Cashier: {{ sale.cashier.username }}</span>
+    <span>{{ sale.created_at|date:"d/m/y H:i" }}</span>
+    <span>Served by: {{ sale.cashier.username }}</span>
 </div>
+{% if sale.customer %}
+<div class="print-row">
+    <span>Customer: {{ sale.customer.display_name }}</span>
+</div>
+<div class="print-row">
+    <span>Phone: {{ sale.customer.phone_number }}</span>
+</div>
+{% endif %}
 
 <div class="print-divider"></div>
 
 <!-- Items -->
 <div class="print-row print-bold">
-    <span style="flex:2;">Item</span>
+    <span style="flex:3;">Item</span>
     <span style="flex:1; text-align: center;">Qty</span>
-    <span style="flex:1; text-align: right;">Total</span>
+    <span style="flex:1.4; text-align: right;">Amount</span>
 </div>
 
 {% for item in sale.items.all %}
-<div style="margin-bottom: 2px;">
-    <div>{{ item.product.name }}</div>
+<div style="margin-bottom: 3px;">
+    <div>{{ item.product.name }}{% if item.mode_label %} [{{ item.mode_label }}]{% endif %}</div>
     <div class="print-row">
-        <span style="flex:2; font-size:10px;">@ {{ item.unit_price|intcomma }}</span>
+        <span style="flex:3; font-size:10px;">
+            {{ item.product.sku }} @ {{ item.unit_price|floatformat:2|intcomma }}{% if item.pieces_per_unit > 1 %} /pair{% endif %}
+        </span>
         <span style="flex:1; text-align: center;">{{ item.quantity }}</span>
-        <span style="flex:1; text-align: right;">{{ item.total_price|intcomma }}</span>
+        <span style="flex:1.4; text-align: right;">{{ item.total_price|floatformat:2|intcomma }}</span>
     </div>
+    {% if item.quantity_refunded %}
+    <div class="print-row" style="font-size:10px;">
+        <span style="flex:3;">&nbsp;&nbsp;Returned x{{ item.quantity_refunded }}</span>
+        <span style="flex:1.4; text-align: right;">-{{ item.refunded_amount|floatformat:2|intcomma }}</span>
+    </div>
+    {% endif %}
 </div>
 {% endfor %}
 
@@ -42,39 +59,73 @@
 <!-- Totals -->
 <div class="print-row">
     <span>Subtotal:</span>
-    <span>{{ sale.subtotal|intcomma }}</span>
+    <span>{{ sale.subtotal|floatformat:2|intcomma }}</span>
 </div>
+{% if sale.discount_amount > 0 %}
+<div class="print-row">
+    <span>You saved:</span>
+    <span>{{ sale.discount_amount|floatformat:2|intcomma }}</span>
+</div>
+{% endif %}
 {% if sale.total_tax > 0 %}
 <div class="print-row">
     <span>Tax:</span>
-    <span>{{ sale.total_tax|intcomma }}</span>
+    <span>{{ sale.total_tax|floatformat:2|intcomma }}</span>
 </div>
 {% endif %}
 
 <div class="print-row print-bold print-lg" style="margin-top: 5px;">
     <span>TOTAL:</span>
-    <span>{{ sale.total_amount|intcomma }}</span>
+    <span>GHS {{ sale.total_amount|floatformat:2|intcomma }}</span>
 </div>
 
 <div class="print-divider"></div>
 
 <!-- Payments -->
 {% for payment in sale.payments.all %}
+    {% if payment.entry_type == 'CHANGE' %}
 <div class="print-row">
-    <span>{{ payment.get_payment_method_display }}:</span>
-    <span>{{ payment.amount|intcomma }}</span>
+    <span>Change given:</span>
+    <span>{{ payment.amount|floatformat:2|intcomma }}</span>
 </div>
+    {% elif payment.entry_type == 'REFUND' %}
+<div class="print-row">
+    <span>Refund ({{ payment.get_payment_method_display }}):</span>
+    <span>{{ payment.amount|floatformat:2|intcomma }}</span>
+</div>
+    {% else %}
+<div class="print-row">
+    <span>{{ payment.get_payment_method_display }}{% if payment.entry_type == 'DEBT' %} (settlement){% endif %}:</span>
+    <span>{{ payment.amount|floatformat:2|intcomma }}</span>
+</div>
+    {% endif %}
 {% endfor %}
 
 <div class="print-row print-bold">
-    <span>CHANGE:</span>
-    <span>{{ sale.change_due|intcomma }}</span>
+    <span>PAID:</span>
+    <span>{{ sale.amount_paid|floatformat:2|intcomma }}</span>
 </div>
+
+{% if sale.balance_remaining > 0 %}
+<div class="print-divider"></div>
+<div class="print-row print-bold print-lg">
+    <span>BALANCE OWING:</span>
+    <span>{{ sale.balance_remaining|floatformat:2|intcomma }}</span>
+</div>
+{% if sale.customer %}
+<div style="font-size:10px; margin-top:3px;">
+    Total account balance for {{ sale.customer.display_name }}:
+    GHS {{ sale.customer.current_debt|floatformat:2|intcomma }}
+</div>
+{% endif %}
+{% endif %}
 
 <div class="print-divider"></div>
 
 <!-- Footer -->
 <div class="print-center" style="margin-top: 10px;">
     <div>Thank you!</div>
+    <div style="font-size: 10px; margin-top: 4px;">Goods returnable within 7 days with this receipt.</div>
     <div style="font-size: 10px; margin-top: 5px;">Powered by DDT Technologies</div>
 </div>
+{% endwith %}

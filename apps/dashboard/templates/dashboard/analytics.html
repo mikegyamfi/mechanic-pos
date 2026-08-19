@@ -50,15 +50,96 @@
         {% endif %}
     </div>
 
-    <!-- Critical Alerts (Only show if needed) -->
-    {% if low_stock_count > 0 %}
+    <!-- My open shift: every role sees their own drawer at a glance -->
+    {% if session_stats %}
     <div class="col-12">
-        <div class="alert alert-danger d-flex align-items-center" role="alert">
-            <i class="ri-alarm-warning-line me-2"></i>
-            <div>
-                <strong>Action Required:</strong> You have {{ low_stock_count }} items running low on stock.
-                <a href="{% url 'inventory:dashboard' %}" class="alert-link">View Inventory</a>
+        <div class="card border-primary">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-primary">
+                            <i class="ri-cash-line me-1"></i> My open shift
+                        </h6>
+                        <small class="text-muted">Since {{ session_stats.started|date:"d M, H:i" }}</small>
+                    </div>
+                    <div class="d-flex gap-4 flex-wrap">
+                        <div>
+                            <small class="text-muted d-block text-uppercase" style="font-size:.65rem;">Opening float</small>
+                            <strong>₵{{ session_stats.opening|floatformat:2|intcomma }}</strong>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block text-uppercase" style="font-size:.65rem;">Cash taken</small>
+                            <strong class="text-success">₵{{ session_stats.cash|floatformat:2|intcomma }}</strong>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block text-uppercase" style="font-size:.65rem;">MoMo / Card</small>
+                            <strong>₵{{ session_stats.digital|floatformat:2|intcomma }}</strong>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block text-uppercase" style="font-size:.65rem;">Given on credit</small>
+                            <strong class="text-danger">₵{{ session_stats.credit|floatformat:2|intcomma }}</strong>
+                        </div>
+                        <div>
+                            <small class="text-muted d-block text-uppercase" style="font-size:.65rem;">Should be in drawer</small>
+                            <strong class="text-primary fs-5">₵{{ session_stats.expected_cash|floatformat:2|intcomma }}</strong>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'sales:pos' %}" class="btn btn-primary btn-sm fw-bold">
+                            <i class="ri-shopping-cart-2-line me-1"></i> Sell
+                        </a>
+                        <a href="{% url 'sales:close_register' %}" class="btn btn-label-danger btn-sm fw-bold">
+                            Close shift
+                        </a>
+                    </div>
+                </div>
             </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Stock alerts: a salesperson who does not know what is running out cannot sell -->
+    {% if low_stock_count > 0 or out_of_stock_count > 0 %}
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header d-flex justify-content-between align-items-center py-3">
+                <h6 class="mb-0 fw-bold text-warning">
+                    <i class="ri-alarm-warning-line me-1"></i>
+                    Stock running out
+                    <span class="badge bg-label-warning ms-1">{{ low_stock_count }} low</span>
+                    <span class="badge bg-label-danger ms-1">{{ out_of_stock_count }} out</span>
+                </h6>
+                <div>
+                    {% if stock_value %}
+                    <small class="text-muted me-3">
+                        Stock on hand worth <strong>₵{{ stock_value|floatformat:2|intcomma }}</strong>
+                    </small>
+                    {% endif %}
+                    <a href="{% url 'inventory:dashboard' %}" class="btn btn-sm btn-label-warning fw-bold">
+                        Full inventory
+                    </a>
+                </div>
+            </div>
+            {% if low_stock_items %}
+            <div class="card-body pt-3">
+                <div class="d-flex flex-wrap gap-2">
+                    {% for item in low_stock_items %}
+                    <a href="{% url 'products:product_detail' item.pk %}"
+                       class="text-decoration-none border rounded px-3 py-2"
+                       style="min-width: 190px;">
+                        <div class="fw-bold text-dark text-truncate" style="max-width: 220px;">{{ item.name }}</div>
+                        <small class="text-muted">{{ item.sku }}</small>
+                        <div class="fw-bold {% if item.pieces <= 2 %}text-danger{% else %}text-warning{% endif %}">
+                            {{ item.pieces }} piece{{ item.pieces|pluralize }} left
+                            {% if item.is_sold_in_pairs %}
+                                <small class="text-muted">({{ item.pieces|divisibleby:2|yesno:"complete pairs,+1 single" }})</small>
+                            {% endif %}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -68,9 +149,9 @@
         <div class="card h-100">
             <div class="card-body row g-4">
 
-                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %} card-separator">
+                <div class="col-6 col-md-4 col-xl card-separator">
                     <div class="d-flex align-items-center mb-2">
-                        <div class="avatar me-4">
+                        <div class="avatar me-3">
                             <div class="avatar-initial bg-label-primary rounded shadow-xs">
                                 <i class="ri-money-dollar-circle-line ri-24px"></i>
                             </div>
@@ -78,29 +159,35 @@
                         <div>
                             <h5 class="mb-0 fw-bold">{{ revenue|floatformat:2|intcomma }}</h5>
                             <small class="text-muted">Today's Revenue</small>
+                            {% if transactions %}
+                            <div class="text-muted" style="font-size:.7rem;">
+                                avg ₵{{ average_basket|floatformat:2|intcomma }} per receipt
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
 
                 {% if show_profit %}
-                <div class="col-md-3 card-separator">
+                <div class="col-6 col-md-4 col-xl card-separator">
                     <div class="d-flex align-items-center mb-2">
-                        <div class="avatar me-4">
+                        <div class="avatar me-3">
                             <div class="avatar-initial bg-label-success rounded shadow-xs">
                                 <i class="ri-funds-line ri-24px"></i>
                             </div>
                         </div>
                         <div>
                             <h5 class="mb-0 fw-bold">{{ profit|floatformat:2|intcomma }}</h5>
-                            <small class="text-muted">Est. Gross Profit</small>
+                            <small class="text-muted">Gross Profit</small>
+                            <div class="text-muted" style="font-size:.7rem;">revenue − true batch cost</div>
                         </div>
                     </div>
                 </div>
                 {% endif %}
 
-                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %} card-separator">
+                <div class="col-6 col-md-4 col-xl card-separator">
                     <div class="d-flex align-items-center mb-2">
-                        <div class="avatar me-4">
+                        <div class="avatar me-3">
                             <div class="avatar-initial bg-label-info rounded shadow-xs">
                                 <i class="ri-bill-line ri-24px"></i>
                             </div>
@@ -112,16 +199,32 @@
                     </div>
                 </div>
 
-                <div class="{% if show_profit %}col-md-3{% else %}col-md-4{% endif %}">
+                <div class="col-6 col-md-4 col-xl card-separator">
                     <div class="d-flex align-items-center mb-2">
-                        <div class="avatar me-4">
+                        <div class="avatar me-3">
                             <div class="avatar-initial bg-label-warning rounded shadow-xs">
                                 <i class="ri-wallet-3-line ri-24px"></i>
                             </div>
                         </div>
                         <div>
                             <h5 class="mb-0 fw-bold">{{ cash_in_hand|floatformat:2|intcomma }}</h5>
-                            <small class="text-muted">Cash in Drawers</small>
+                            <small class="text-muted">Cash Taken (net of change)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-6 col-md-4 col-xl">
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="avatar me-3">
+                            <div class="avatar-initial bg-label-danger rounded shadow-xs">
+                                <i class="ri-hand-coin-line ri-24px"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <h5 class="mb-0 fw-bold {% if credit_extended > 0 %}text-danger{% endif %}">
+                                {{ credit_extended|floatformat:2|intcomma }}
+                            </h5>
+                            <small class="text-muted">Given on Credit Today</small>
                         </div>
                     </div>
                 </div>

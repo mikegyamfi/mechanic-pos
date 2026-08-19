@@ -18,12 +18,14 @@ from ..products.models import Product
 from ..sales.models import SaleItem
 
 
+@login_required
 def shipment_list(request):
     """View to see all imported containers."""
     shipments = Shipment.objects.all().order_by('-created_at')
     return render(request, 'inventory/shipment_list.html', {'shipments': shipments})
 
 
+@login_required
 def shipment_create(request):
     """View to create a brand-new container/shipment."""
     if request.method == 'POST':
@@ -49,13 +51,17 @@ def shipment_create(request):
     return render(request, 'inventory/shipment_form.html')
 
 
+@login_required
 def shipment_detail(request, pk):
     """View to manage a specific container and add items to it."""
     shipment = get_object_or_404(Shipment, pk=pk)
-    items = shipment.items.all()
-    products = Product.objects.all()  # For the dropdown
+    items = shipment.items.select_related('product').all()
+    products = Product.objects.filter(is_active=True).order_by('name')  # For the dropdown
 
     if request.method == 'POST':
+        if shipment.status == 'RECEIVED':
+            messages.error(request, "This container is already on the shelf; its lines cannot be changed.")
+            return redirect('inventory:shipment_detail', pk=shipment.pk)
         # Adding a new item from the invoice to the container
         product_id = request.POST.get('product_id')
         quantity = int(request.POST.get('quantity', 0))
@@ -84,20 +90,42 @@ def shipment_detail(request, pk):
     return render(request, 'inventory/shipment_detail.html', context)
 
 
-@transaction.atomic
+@login_required
 def receive_shipment(request, pk):
     """The Magic Button: Pushes the container to live shop inventory."""
     shipment = get_object_or_404(Shipment, pk=pk)
 
+    if request.user.role not in ('OWNER', 'MANAGER', 'WAREHOUSE_STAFF'):
+        messages.error(request, "You do not have permission to receive stock.")
+        return redirect('inventory:shipment_detail', pk=shipment.pk)
+
     if request.method == 'POST':
+        from apps.sales import services as sales_services
+
+        location = sales_services.resolve_location(request.user)
+        if location is None:
+            messages.error(request, "You are not assigned to a location, so stock cannot be received.")
+            return redirect('inventory:shipment_detail', pk=shipment.pk)
+
         try:
-            # Assuming the user is a manager receiving it at their assigned location
-            location = request.user.assigned_location
-            shipment.receive_into_stock(location=location, received_by=request.user)
-            messages.success(request,
-                             f"Shipment {shipment.reference_number} successfully received into stock! Prices have been updated.")
-        except Exception as e:
-            messages.error(request, f"Error receiving shipment: {str(e)}")
+            summary = shipment.receive_into_stock(location=location, received_by=request.user)
+        except ValueError as exc:
+            # Double-receive guard and other business refusals.
+            messages.error(request, str(exc))
+            return redirect('inventory:shipment_detail', pk=shipment.pk)
+
+        parts = [f"{summary['batches']} batch(es) created at {location.name}"]
+        if summary['prices_applied']:
+            parts.append(f"{summary['prices_applied']} selling price(s) updated")
+        if summary['prices_suggested']:
+            parts.append(
+                f"{summary['prices_suggested']} price(s) held back because they are managed by hand "
+                f"-- review them under Products > Price suggestions"
+            )
+        messages.success(
+            request,
+            f"Shipment {shipment.reference_number} received. " + ". ".join(parts) + "."
+        )
 
     return redirect('inventory:shipment_detail', pk=shipment.pk)
 

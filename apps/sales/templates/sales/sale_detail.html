@@ -100,15 +100,40 @@
                             <span class="avatar-initial rounded bg-label-primary p-2">
                                 <i class="ri-store-2-fill ri-2x"></i>
                             </span>
-                            <span class="h3 fw-bold mb-0 text-primary">{{ user.assigned_location.name }}</span>
+                            <span class="h3 fw-bold mb-0 text-primary">{{ sale.location.name }}</span>
                         </div>
-                        <p class="mb-1 text-muted">{{ user.assigned_location.address }}</p>
-                        <p class="mb-0 text-muted">{{ user.assigned_location.phone_number }}</p>
+                        <p class="mb-1 text-muted">{{ sale.location.address }}</p>
+                        <p class="mb-0 text-muted">{{ sale.location.phone_number }}</p>
+                        {% if sale.customer %}
+                        <div class="mt-3">
+                            <small class="text-muted text-uppercase fw-bold">Billed to</small>
+                            <div class="fw-bold text-dark">{{ sale.customer.display_name }}</div>
+                            <div class="text-muted small">
+                                {{ sale.customer.phone_number }} ·
+                                owes ₵{{ sale.customer.current_debt|floatformat:2|intcomma }} in total
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="text-sm-end">
-                        <h4 class="fw-bold mb-2">INVOICE #{{ sale.invoice_number|slice:":8" }}</h4>
+                        <h4 class="fw-bold mb-2">{{ sale.invoice_number }}</h4>
                         <div class="mb-1 text-muted">Date: <span class="fw-semibold text-dark">{{ sale.created_at|date:"d M Y, H:i" }}</span></div>
                         <div class="text-muted">Cashier: <span class="fw-semibold text-dark">{{ sale.cashier.username }}</span></div>
+                        {% if sale.register_session %}
+                        <div class="text-muted small">
+                            Shift <a href="{% url 'sales:session_detail' sale.register_session.pk %}">#{{ sale.register_session.id }}</a>
+                        </div>
+                        {% endif %}
+                        <div class="mt-2">
+                            <span class="badge bg-label-{% if sale.status == 'COMPLETED' %}success{% elif sale.status == 'REFUNDED' %}danger{% elif sale.status == 'PARTIAL' %}warning{% else %}secondary{% endif %}">
+                                {{ sale.get_status_display }}
+                            </span>
+                            {% if sale.has_price_override %}
+                            <span class="badge bg-label-danger" title="A line was sold below the normal margin floor under a promotion">
+                                <i class="ri-price-tag-3-line"></i> Promotional pricing
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
 
@@ -122,18 +147,57 @@
                                 <th class="ps-0">Item</th>
                                 <th class="text-center">Qty</th>
                                 <th class="text-end">Price</th>
+                                {% if show_profit %}<th class="text-end">Cost</th><th class="text-end">Margin</th>{% endif %}
                                 <th class="text-end pe-0">Total</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for item in sale.items.all %}
+                            {% for item in items %}
                             <tr>
                                 <td class="ps-0">
                                     <span class="fw-medium text-heading">{{ item.product.name }}</span>
+                                    {% if item.mode_label %}
+                                    <span class="badge bg-label-dark ms-1">{{ item.mode_label }}</span>
+                                    {% endif %}
+                                    <div class="small text-muted">
+                                        {{ item.product.sku }} · {{ item.pieces }} piece{{ item.pieces|pluralize }}
+                                        {% for allocation in item.batch_lines.all %}
+                                            · batch {{ allocation.batch.batch_number|default:allocation.batch_id }} ({{ allocation.pieces }})
+                                        {% endfor %}
+                                    </div>
+                                    {% if item.promotion %}
+                                    <div class="small text-danger fw-bold">
+                                        <i class="ri-price-tag-3-line"></i>
+                                        Promotion: {{ item.promotion.name }} ({{ item.promotion.discount_label }})
+                                        {% if item.below_floor %}— below the normal margin floor{% endif %}
+                                    </div>
+                                    {% elif item.below_floor %}
+                                    <div class="small text-warning fw-bold">
+                                        <i class="ri-alert-line"></i>
+                                        Below floor{% if item.override_by %} — authorised by {{ item.override_by.username }}{% endif %}
+                                        {% if item.override_reason %}: {{ item.override_reason }}{% endif %}
+                                    </div>
+                                    {% endif %}
+                                    {% if item.quantity_refunded %}
+                                    <div class="small text-danger fw-bold">
+                                        {{ item.quantity_refunded }} returned (−₵{{ item.refunded_amount|floatformat:2|intcomma }})
+                                    </div>
+                                    {% endif %}
                                 </td>
                                 <td class="text-center">{{ item.quantity }}</td>
-                                <td class="text-end">{{ item.unit_price|intcomma }}</td>
-                                <td class="text-end pe-0 fw-medium">{{ item.total_price|intcomma }}</td>
+                                <td class="text-end">
+                                    {{ item.unit_price|floatformat:2|intcomma }}
+                                    {% if item.list_price > item.unit_price %}
+                                    <div class="small text-muted"><s>{{ item.list_price|floatformat:2|intcomma }}</s></div>
+                                    {% endif %}
+                                </td>
+                                {% if show_profit %}
+                                <td class="text-end text-muted">{{ item.total_cost|floatformat:2|intcomma }}</td>
+                                <td class="text-end fw-semibold {% if item.margin_percentage < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {{ item.margin_percentage|floatformat:1 }}%
+                                </td>
+                                {% endif %}
+                                <td class="text-end pe-0 fw-medium">{{ item.total_price|floatformat:2|intcomma }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -143,36 +207,89 @@
                 <div class="row">
                     <div class="col-md-6 mb-4 mb-md-0">
                         <div class="p-3 bg-lighter rounded">
-                            <h6 class="mb-2 fw-bold text-muted text-uppercase fs-tiny">Payment Methods</h6>
+                            <h6 class="mb-2 fw-bold text-muted text-uppercase fs-tiny">Money Trail</h6>
                             <ul class="list-unstyled mb-0">
-                                {% for payment in sale.payments.all %}
+                                {% for payment in payments %}
                                 <li class="d-flex justify-content-between mb-1">
-                                    <span class="fw-medium">{{ payment.get_payment_method_display }}</span>
-                                    <span>{{ payment.amount|intcomma }}</span>
+                                    <span class="fw-medium">
+                                        {{ payment.get_payment_method_display }}
+                                        <small class="text-muted">
+                                            {% if payment.entry_type == 'CHANGE' %}(change)
+                                            {% elif payment.entry_type == 'DEBT' %}(settled {{ payment.created_at|date:"d M" }})
+                                            {% elif payment.entry_type == 'REFUND' %}(refund)
+                                            {% endif %}
+                                            {% if payment.register_session_id and payment.register_session_id != sale.register_session_id %}
+                                                · shift #{{ payment.register_session_id }}
+                                            {% endif %}
+                                        </small>
+                                    </span>
+                                    <span class="{% if payment.amount < 0 %}text-danger{% endif %}">
+                                        {{ payment.amount|floatformat:2|intcomma }}
+                                    </span>
                                 </li>
+                                {% empty %}
+                                <li class="text-danger fw-semibold">Nothing paid yet — fully on credit.</li>
                                 {% endfor %}
                             </ul>
                         </div>
                     </div>
                     <div class="col-md-6 d-flex justify-content-end">
-                        <div class="invoice-calculations w-100" style="max-width: 320px;">
+                        <div class="invoice-calculations w-100" style="max-width: 340px;">
                             <div class="d-flex justify-content-between mb-2">
                                 <span class="text-muted">Subtotal:</span>
-                                <span class="fw-semibold">{{ sale.subtotal|intcomma }}</span>
+                                <span class="fw-semibold">{{ sale.subtotal|floatformat:2|intcomma }}</span>
                             </div>
+                            {% if sale.discount_amount > 0 %}
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Negotiated off list:</span>
+                                <span class="fw-semibold text-success">−{{ sale.discount_amount|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% endif %}
                             <div class="d-flex justify-content-between mb-2">
                                 <span class="text-muted">Tax:</span>
-                                <span class="fw-semibold">{{ sale.total_tax|intcomma }}</span>
+                                <span class="fw-semibold">{{ sale.total_tax|floatformat:2|intcomma }}</span>
                             </div>
                             <hr class="my-3">
                             <div class="d-flex justify-content-between mb-2">
                                 <span class="h5 mb-0">Total:</span>
-                                <span class="h5 mb-0 text-primary">{{ sale.total_amount|intcomma }}</span>
+                                <span class="h5 mb-0 text-primary">{{ sale.total_amount|floatformat:2|intcomma }}</span>
                             </div>
+                            {% if sale.refunded_amount > 0 %}
+                            <div class="d-flex justify-content-between mb-2 text-danger">
+                                <span>Refunded:</span>
+                                <span class="fw-semibold">−{{ sale.refunded_amount|floatformat:2|intcomma }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 fw-bold">
+                                <span>Net invoice value:</span>
+                                <span>{{ sale.net_amount|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% endif %}
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Paid:</span>
+                                <span class="fw-semibold text-success">{{ sale.amount_paid|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% if sale.change_due > 0 %}
                             <div class="d-flex justify-content-between text-muted">
-                                <span>Change:</span>
-                                <span>{{ sale.change_due|intcomma }}</span>
+                                <span>Change given:</span>
+                                <span>{{ sale.change_due|floatformat:2|intcomma }}</span>
                             </div>
+                            {% endif %}
+                            {% if sale.balance_remaining > 0 %}
+                            <div class="d-flex justify-content-between mt-2 pt-2 border-top text-danger fw-bold">
+                                <span>Balance owing:</span>
+                                <span class="fs-5">{{ sale.balance_remaining|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% endif %}
+                            {% if show_profit %}
+                            <div class="d-flex justify-content-between mt-3 pt-2 border-top">
+                                <span class="text-muted">Cost of goods:</span>
+                                <span class="fw-semibold">{{ sale.total_cost|floatformat:2|intcomma }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between fw-bold {% if sale.gross_profit < 0 %}text-danger{% else %}text-success{% endif %}">
+                                <span>Gross profit:</span>
+                                <span>{{ sale.gross_profit|floatformat:2|intcomma }}</span>
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -187,6 +304,11 @@
                     <button class="btn btn-primary btn-lg px-5" onclick="window.print()">
                         <i class="ri-printer-line me-2"></i> Print Invoice
                     </button>
+                    {% if can_refund and sale.status != 'REFUNDED' %}
+                    <a href="{% url 'sales:refund' sale.pk %}" class="btn btn-outline-danger btn-lg">
+                        <i class="ri-arrow-go-back-line me-2"></i> Refund / Return
+                    </a>
+                    {% endif %}
                     <a href="{% url 'sales:pos' %}" class="btn btn-success btn-lg">
                         <i class="ri-shopping-cart-2-line me-2"></i> Next Sale
                     </a>
@@ -208,18 +330,26 @@
             <form action="{% url 'sales:add_payment' sale.pk %}" method="post">
                 {% csrf_token %}
                 <div class="modal-body">
-                    <div class="alert alert-info">
-                        Adding payment to current session ({{ user.username }}).
+                    <div class="alert alert-info py-2 small">
+                        This money goes into <strong>your currently open drawer</strong>
+                        ({{ user.username }}), not the shift that made the sale — which is how
+                        cash reconciliation is meant to work.
                     </div>
 
                     <label class="form-label">Payment Amount</label>
                     <div class="input-group mb-3">
                         <span class="input-group-text">GHS</span>
-                        <input type="number" step="0.01" name="amount" class="form-control form-control-lg fw-bold" value="{{ sale.balance_remaining }}" max="{{ sale.balance_remaining }}" required>
+                        <input type="number" step="0.01" min="0.01" name="amount"
+                               class="form-control form-control-lg fw-bold"
+                               value="{{ sale.balance_remaining }}" max="{{ sale.balance_remaining }}" required>
+                    </div>
+                    <div class="form-text mb-3">
+                        Outstanding balance is ₵{{ sale.balance_remaining|floatformat:2|intcomma }}.
+                        Anything above that will be rejected.
                     </div>
 
                     <label class="form-label">Method</label>
-                    <div class="row g-2">
+                    <div class="row g-2 mb-3">
                         <div class="col-4">
                             <input type="radio" class="btn-check" name="payment_method" id="modal_cash" value="CASH" checked>
                             <label class="btn btn-outline-primary w-100" for="modal_cash">Cash</label>
@@ -233,6 +363,9 @@
                             <label class="btn btn-outline-info w-100" for="modal_card">Card</label>
                         </div>
                     </div>
+
+                    <label class="form-label">Reference (MoMo transaction ID, cheque number…)</label>
+                    <input type="text" name="reference" class="form-control" placeholder="Optional but useful">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-label-secondary" data-bs-dismiss="modal">Cancel</button>

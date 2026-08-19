@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% load static humanize %}
+
+{% block title %}Price Suggestions | Abossey Okai Hub{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-1">Price suggestions from shipments</h5>
+            <small class="text-muted">
+                These parts have a price set by hand, so receiving a container did not overwrite it.
+                Decide each one yourself.
+            </small>
+        </div>
+        <a href="{% url 'products:product_list' %}" class="btn btn-outline-secondary">
+            <i class="ri-arrow-go-back-line me-1"></i> Back to catalogue
+        </a>
+    </div>
+
+    <div class="card-body p-0">
+        {% if pending %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Part</th>
+                        <th class="text-end">Current price</th>
+                        <th class="text-end">Suggested</th>
+                        <th class="text-end">Change</th>
+                        <th class="text-end">Cost / new margin</th>
+                        <th>Source</th>
+                        <th class="text-end" style="width: 210px;">Decision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in pending %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'products:product_detail' product.pk %}" class="fw-bold text-dark">
+                                {{ product.name }}
+                            </a>
+                            <div class="small text-muted">
+                                {{ product.sku }}
+                                {% if product.is_sold_in_pairs %}
+                                <span class="badge bg-label-primary">PAIR</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="text-end fw-semibold">₵{{ product.selling_price|floatformat:2|intcomma }}</td>
+                        <td class="text-end fw-bold text-primary">₵{{ product.suggested_selling_price|floatformat:2|intcomma }}</td>
+                        <td class="text-end">
+                            {% if product.suggested_selling_price > product.selling_price %}
+                            <span class="badge bg-label-warning">
+                                <i class="ri-arrow-up-line"></i> increase
+                            </span>
+                            {% else %}
+                            <span class="badge bg-label-info">
+                                <i class="ri-arrow-down-line"></i> decrease
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="small text-muted">cost ₵{{ product.cost_price|floatformat:2|intcomma }}/pc</div>
+                            <div class="small fw-semibold">
+                                {% if product.is_sold_in_pairs %}
+                                    pair cost ₵{{ product.cost_price|floatformat:2|intcomma }} × 2
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="small">{{ product.suggested_price_source }}</div>
+                            <div class="small text-muted">{{ product.suggested_price_at|date:"d M Y H:i" }}</div>
+                        </td>
+                        <td class="text-end">
+                            <form method="post" class="d-inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="product_id" value="{{ product.pk }}">
+                                <button name="action" value="accept" class="btn btn-sm btn-primary fw-bold">
+                                    Accept
+                                </button>
+                                <button name="action" value="dismiss" class="btn btn-sm btn-label-secondary fw-bold">
+                                    Keep mine
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="ri-checkbox-circle-line ri-3x text-success mb-2 d-block"></i>
+            <h6 class="fw-bold text-muted">Nothing waiting</h6>
+            <small class="text-muted">No shipment has tried to change a manually-set price.</small>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

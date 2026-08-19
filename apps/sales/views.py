@@ -1,217 +1,451 @@
 import json
 from decimal import Decimal
 
-from django.db import transaction
-from django.db.models import Q, F
-from django.http import JsonResponse
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
+from django.db.models import Count, F, Q, Sum
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.template.loader import render_to_string
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
-from .models import Sale, SaleItem, RegisterSession, SalePayment, Delivery
+from apps.core.money import D, ZERO, q2
+
+from . import services
+from .models import Delivery, RegisterSession, Sale, SalePayment
+from .services import SaleError
 from ..customers.models import Customer
-from ..inventory.models import StockBatch, StockAdjustment
+from ..inventory.models import StockBatch
 from ..location.models import Location
-from ..notifications.services import SMSService
-from ..products.models import Category, Product
+from ..products.models import Category, Product, resolve_promotions
+
+MANAGER_ROLES = services.MANAGER_ROLES
+PRICE_VISIBLE_ROLES = ('OWNER', 'MANAGER', 'ACCOUNTANT')
 
 
+def _can_see_cost(user):
+    """Cashiers and salespeople see prices and stock, not landed cost."""
+    return user.role in PRICE_VISIBLE_ROLES
+
+
+# ---------------------------------------------------------------------------
+# POS TERMINAL
+# ---------------------------------------------------------------------------
 @login_required
 def pos_view(request):
     """
     The Cashier's Cockpit.
-    1. Checks if a Register Session is OPEN.
-    2. If not, forces them to open one.
-    3. Renders the POS interface with Categories and Products.
+
+    The catalogue is NOT dumped into the page any more -- it is paged and
+    searched server-side through `api_products`, so a 10,000-part catalogue
+    loads as fast as a 10-part one.
     """
     user = request.user
-    location = user.assigned_location
+    location = services.resolve_location(user)
 
-    # 1. Check for Active Session
-    active_session = RegisterSession.objects.filter(
-        user=user,
-        location=location,
-        status=RegisterSession.Status.OPEN
-    ).first()
+    if location is None:
+        messages.error(request, "You are not assigned to a shop. Ask the owner to set your location.")
+        return redirect('dashboard:index')
+
+    active_session = services.get_open_session(user, location)
 
     if not active_session:
         if request.method == 'POST':
-            # Handle Opening Logic
-            RegisterSession.objects.create(
-                user=user,
-                location=location,
-                opening_balance=request.POST.get('opening_balance', 0)
-            )
+            opening = request.POST.get('opening_balance', 0)
+            try:
+                opening = q2(opening)
+            except ValueError:
+                messages.error(request, "Enter the opening cash as a number.")
+                return render(request, 'sales/open_register.html', {'location': location})
+            RegisterSession.objects.create(user=user, location=location, opening_balance=opening)
             return redirect('sales:pos')
-        return render(request, 'sales/open_register.html')
-
-    # 2. Load Catalog Data for POS
-    # We load active categories and products to populate the initial grid
-    categories = Category.objects.filter(is_active=True)
-    products = Product.objects.filter(is_active=True).select_related('category')
+        return render(request, 'sales/open_register.html', {'location': location})
 
     return render(request, 'sales/pos.html', {
         'session': active_session,
         'location': location,
-        'categories': categories,
-        'products': products  # FIX: Removed [:50] so the POS can filter the full catalog!
+        'categories': Category.objects.filter(is_active=True).order_by('name'),
+        'can_see_cost': _can_see_cost(user),
+        'is_manager': user.role in MANAGER_ROLES,
+        'min_margin': location.min_margin_percentage,
+        'shift_stats': _shift_stats(active_session),
+    })
+
+
+def _shift_stats(session):
+    """What this cashier has done since opening the drawer."""
+    session.recalculate()
+    sales = Sale.objects.filter(register_session=session, status__in=Sale.REVENUE_STATUSES)
+    agg = sales.aggregate(
+        revenue=Sum('total_amount'),
+        refunded=Sum('refunded_amount'),
+        count=Count('id'),
+    )
+    revenue = q2(D(agg['revenue'] or 0) - D(agg['refunded'] or 0))
+    return {
+        'revenue': revenue,
+        'transactions': agg['count'] or 0,
+        'cash': q2(session.total_cash_sales),
+        'digital': session.total_digital_sales,
+        'credit': q2(session.total_credit_extended),
+        'expected_cash': session.expected_cash,
+        'opening': q2(session.opening_balance),
+    }
+
+
+def _product_row(product, location, stock_map, can_see_cost, promo_map=None):
+    """One row of the POS catalogue table."""
+    stock = stock_map.get(product.id, {'pieces': 0, 'batches': 0})
+    pieces = stock['pieces']
+    promotion = ((promo_map or {}).get(product.id) or {}).get('promotion')
+
+    normal_retail = q2(product.selling_price)
+    retail = product.base_price(
+        Product.SellMode.PAIR if product.is_sold_in_pairs else Product.SellMode.PIECE,
+        promotion=promotion,
+    )
+    wholesale = product.base_price(
+        Product.SellMode.PAIR if product.is_sold_in_pairs else Product.SellMode.PIECE,
+        wholesale=True, promotion=promotion,
+    )
+
+    row = {
+        'id': product.id,
+        'name': product.name,
+        'sku': product.sku,
+        'barcode': product.barcode or '',
+        'category': product.category.name if product.category else '',
+        'category_id': product.category_id,
+        'brand': product.brand.name if product.brand else '',
+        'shelf': product.shelf_location or '',
+        'unit': product.unit.symbol if product.unit else 'pc',
+        'is_pair': product.is_sold_in_pairs,
+        'split_mode': product.split_price_mode,
+        'split_percentage': float(product.split_price_percentage),
+        'retail': float(retail),
+        'wholesale': float(wholesale),
+        'single_retail': float(product.split_price_from(retail)) if product.is_sold_in_pairs else None,
+        'single_wholesale': float(product.split_price_from(wholesale)) if product.is_sold_in_pairs else None,
+        'pieces': pieces,
+        'batches': stock['batches'],
+        'sellable_pairs': pieces // 2 if product.is_sold_in_pairs else None,
+        'low_stock_threshold': product.low_stock_threshold,
+        'is_out': pieces <= 0,
+        'is_low': 0 < pieces <= product.low_stock_threshold,
+        'floor_pair': float(product.price_floor(Product.SellMode.PAIR, location, promotion=promotion)),
+        'floor_piece': float(product.price_floor(Product.SellMode.PIECE, location, promotion=promotion)),
+        'floor_single': float(product.price_floor(Product.SellMode.SINGLE, location, promotion=promotion)),
+        'floor_pair_wholesale': float(product.price_floor(
+            Product.SellMode.PAIR, location, promotion=promotion, wholesale=True)),
+        'floor_piece_wholesale': float(product.price_floor(
+            Product.SellMode.PIECE, location, promotion=promotion, wholesale=True)),
+        'floor_single_wholesale': float(product.price_floor(
+            Product.SellMode.SINGLE, location, promotion=promotion, wholesale=True)),
+        'has_suggestion': product.suggested_selling_price is not None,
+        # Undiscounted prices, so the terminal can show the customer their saving.
+        'normal_retail': float(normal_retail),
+        'normal_single_retail': (float(product.split_price_from(normal_retail))
+                                 if product.is_sold_in_pairs else None),
+        # Promotion: the only authorised way under the margin floor
+        'promo': ({
+            'id': promotion.id,
+            'name': promotion.name,
+            'label': promotion.discount_label,
+            'normal_price': float(normal_retail),
+            'ends_at': promotion.ends_at.strftime('%d %b %Y') if promotion.ends_at else None,
+        } if promotion else None),
+    }
+
+    if can_see_cost:
+        row['cost'] = float(q2(product.cost_price))
+        row['margin_retail'] = float(product.margin_percentage(
+            retail, Product.SellMode.PAIR if product.is_sold_in_pairs else Product.SellMode.PIECE
+        ))
+    return row
+
+
+@login_required
+@require_GET
+def api_products(request):
+    """
+    Server-side catalogue search for the POS table.
+
+    Searches the whole catalogue -- not just the page on screen -- across name,
+    SKU, barcode, part number, brand and shelf location.
+    """
+    user = request.user
+    location = services.resolve_location(user)
+    if location is None:
+        return JsonResponse({'success': False, 'message': 'No location assigned.'}, status=400)
+
+    query = (request.GET.get('q') or '').strip()
+    category_id = request.GET.get('category') or ''
+    stock_filter = request.GET.get('stock') or 'all'
+    sort = request.GET.get('sort') or 'name'
+    try:
+        page_number = max(int(request.GET.get('page', 1)), 1)
+    except ValueError:
+        page_number = 1
+    try:
+        per_page = min(max(int(request.GET.get('per_page', 25)), 5), 100)
+    except ValueError:
+        per_page = 25
+
+    products = Product.objects.filter(is_active=True).select_related('category', 'brand', 'unit')
+
+    if query:
+        products = products.filter(
+            Q(name__icontains=query)
+            | Q(sku__icontains=query)
+            | Q(barcode__icontains=query)
+            | Q(manufacturer_part_number__icontains=query)
+            | Q(brand__name__icontains=query)
+            | Q(shelf_location__icontains=query)
+        )
+
+    if category_id.isdigit():
+        products = products.filter(category_id=int(category_id))
+
+    # Stock at THIS location only -- annotated so we can filter and sort on it.
+    products = products.annotate(
+        stock_here=Sum('batches__quantity', filter=Q(batches__location=location)),
+    )
+
+    if stock_filter == 'in':
+        products = products.filter(stock_here__gt=0)
+    elif stock_filter == 'out':
+        products = products.filter(Q(stock_here__lte=0) | Q(stock_here__isnull=True))
+    elif stock_filter == 'low':
+        products = products.filter(stock_here__gt=0, stock_here__lte=F('low_stock_threshold'))
+
+    sort_map = {
+        'name': ['name'],
+        'sku': ['sku'],
+        'price_asc': ['selling_price', 'name'],
+        'price_desc': ['-selling_price', 'name'],
+        'stock_asc': [F('stock_here').asc(nulls_first=True), 'name'],
+        'stock_desc': [F('stock_here').desc(nulls_last=True), 'name'],
+        'newest': ['-created_at'],
+    }
+    products = products.order_by(*sort_map.get(sort, sort_map['name']))
+
+    paginator = Paginator(products, per_page)
+    page = paginator.get_page(page_number)
+
+    page_products = list(page.object_list)
+    stock_map = _stock_map([p.id for p in page_products], location)
+    promo_map, _suspended = resolve_promotions(page_products, location)
+    can_see_cost = _can_see_cost(user)
+
+    return JsonResponse({
+        'success': True,
+        'results': [_product_row(p, location, stock_map, can_see_cost, promo_map)
+                    for p in page_products],
+        'page': page.number,
+        'num_pages': paginator.num_pages,
+        'total': paginator.count,
+        'per_page': per_page,
+        'has_next': page.has_next(),
+        'has_previous': page.has_previous(),
+        'start_index': page.start_index() if paginator.count else 0,
+        'end_index': page.end_index() if paginator.count else 0,
+    })
+
+
+def _stock_map(product_ids, location):
+    """{product_id: {pieces, batches}} at one location, in a single query."""
+    rows = StockBatch.objects.filter(
+        product_id__in=product_ids, location=location, quantity__gt=0
+    ).values('product_id').annotate(pieces=Sum('quantity'), batches=Count('id'))
+    return {r['product_id']: {'pieces': r['pieces'] or 0, 'batches': r['batches']} for r in rows}
+
+
+@login_required
+@require_GET
+def api_product_batches(request, pk):
+    """
+    Batch-level detail for one part, for the POS stock popup.
+
+    Salespeople get to see exactly what is on the shelf and where it came
+    from; landed cost stays hidden unless their role allows it.
+    """
+    user = request.user
+    location = services.resolve_location(user)
+    product = get_object_or_404(Product, pk=pk)
+    can_see_cost = _can_see_cost(user)
+
+    batches = StockBatch.objects.filter(product=product, quantity__gt=0).select_related(
+        'location', 'supplier'
+    ).order_by('location__name', 'expiry_date', 'received_date')
+
+    rows = []
+    for batch in batches:
+        row = {
+            'id': batch.id,
+            'batch_number': batch.batch_number or '-',
+            'location': batch.location.name,
+            'is_here': batch.location_id == (location.id if location else None),
+            'quantity': batch.quantity,
+            'initial_quantity': batch.initial_quantity,
+            'sold': batch.quantity_sold,
+            'supplier': batch.supplier.name if batch.supplier else '-',
+            'received': batch.received_date.strftime('%d %b %Y'),
+            'expiry': batch.expiry_date.strftime('%d %b %Y') if batch.expiry_date else None,
+            'notes': batch.notes,
+        }
+        if can_see_cost:
+            row['cost_price'] = float(q2(batch.cost_price))
+            row['stock_value'] = float(batch.stock_value)
+        rows.append(row)
+
+    here = sum(r['quantity'] for r in rows if r['is_here'])
+    payload = {
+        'success': True,
+        'product': {
+            'id': product.id,
+            'name': product.name,
+            'sku': product.sku,
+            'is_pair': product.is_sold_in_pairs,
+            'retail': float(q2(product.selling_price)),
+            'single': float(product.effective_single_price) if product.is_sold_in_pairs else None,
+            'split_mode': product.split_price_mode,
+            'split_percentage': float(product.split_price_percentage),
+            'pieces_here': here,
+            'pieces_total': product.stock_on_hand(),
+            'pairs_here': here // 2 if product.is_sold_in_pairs else None,
+            'odd_piece': bool(product.is_sold_in_pairs and here % 2) if product.is_sold_in_pairs else False,
+        },
+        'batches': rows,
+    }
+    if can_see_cost:
+        payload['product']['cost'] = float(q2(product.cost_price))
+        payload['product']['average_cost'] = float(product.weighted_average_cost() or 0)
+    return JsonResponse(payload)
+
+
+@login_required
+@require_POST
+def api_quote_cart(request):
+    """
+    Price a cart without committing it.
+
+    The POS calls this on every change so the cashier always sees the exact
+    number the server will charge -- the two can never drift apart.
+    """
+    try:
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Malformed request.'}, status=400)
+
+    location = services.resolve_location(request.user)
+    if location is None:
+        return JsonResponse({'success': False, 'message': 'No location assigned.'}, status=400)
+
+    try:
+        quote = services.quote_cart(
+            data.get('cart', []), location, request.user, wholesale=bool(data.get('wholesale'))
+        )
+    except SaleError as exc:
+        return JsonResponse({'success': False, 'code': exc.code, 'message': exc.message,
+                             'detail': exc.detail}, status=400)
+
+    return JsonResponse({
+        'success': True,
+        'subtotal': float(quote.subtotal),
+        'tax': float(quote.tax),
+        'total': float(quote.total),
+        'lines': [{
+            'product_id': line.product.id,
+            'quantity': line.quantity,
+            'sell_mode': line.sell_mode,
+            'unit_price': float(line.unit_price),
+            'list_price': float(line.list_price),
+            'normal_price': float(line.normal_price),
+            'line_total': float(line.line_total),
+            'below_floor': line.below_floor,
+            'floor': float(line.floor),
+            'pieces': line.pieces_needed,
+            'promotion': line.promotion.name if line.promotion else None,
+        } for line in quote.lines],
+        'promotions': [{'name': p.name, 'label': p.discount_label} for p in quote.promotions],
     })
 
 
 @login_required
 @require_POST
-@transaction.atomic
 def process_sale(request):
+    """
+    Commit a sale.
+
+    Thin wrapper: every rule lives in services.create_sale so the same
+    guarantees apply however a sale is created.
+    """
     try:
-        data = json.loads(request.body)
+        data = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'message': 'Malformed request.'}, status=400)
 
-        cart = data.get('cart', [])
-        payments = data.get('payments', [])
-        total_amount = Decimal(str(data.get('total_amount', 0)))
-        customer_id = data.get('customer_id')
+    customer = None
+    customer_id = data.get('customer_id')
+    if customer_id:
+        customer = Customer.objects.filter(pk=customer_id).first()
+        if customer is None:
+            return JsonResponse({'success': False, 'message': 'That customer no longer exists.'}, status=400)
 
-        # --- 1. THE CREDIT LIMIT SECURITY GUARDRAIL ---
-        total_paid_upfront = sum(Decimal(str(p['amount'])) for p in payments)
-        new_debt_requested = max(Decimal('0.00'), total_amount - total_paid_upfront)
-
-        if new_debt_requested > 0:
-            if not customer_id:
-                return JsonResponse({
-                    'success': False,
-                    'message': 'SECURITY HALT: You cannot process a credit sale without selecting a Customer/Mechanic.'
-                }, status=400)
-
-            customer = Customer.objects.get(id=customer_id)
-
-            if new_debt_requested > customer.available_credit:
-                return JsonResponse({
-                    'success': False,
-                    'message': f"CREDIT REJECTED: {customer.get_display_name()} has a limit of ₵{customer.credit_limit}. "
-                               f"They currently owe ₵{customer.current_debt}. "
-                               f"Available credit is only ₵{customer.available_credit}. Please ask them to pay previous arrears first."
-                }, status=400)
-
-        # --- 2. SESSION VALIDATION ---
-        user = request.user
-        location = user.assigned_location
-
-        session = RegisterSession.objects.filter(
-            user=user, location=location, status=RegisterSession.Status.OPEN
-        ).first()
-
-        if not session:
-            return JsonResponse({'success': False, 'message': 'No active register session. Please open register.'})
-
-        sale = Sale.objects.create(
-            location=location, cashier=user, register_session=session,
-            total_amount=total_amount, status=Sale.Status.COMPLETED,
-            amount_paid=0, customer_id=customer_id
+    try:
+        sale = services.create_sale(
+            user=request.user,
+            cart=data.get('cart', []),
+            payments=data.get('payments', []),
+            customer=customer,
+            wholesale=bool(data.get('wholesale')),
+            expected_total=data.get('total_amount'),
+            notes=data.get('notes', '') or '',
+            allow_stock_correction=bool(data.get('allow_stock_correction')),
         )
+    except SaleError as exc:
+        return JsonResponse({'success': False, 'code': exc.code, 'message': exc.message,
+                             'detail': exc.detail}, status=400)
 
-        # --- 3. PROCESS CART ITEMS (FEFO & BREAK BULK LOGIC) ---
-        for item in cart:
-            product_id = item['id']
-            qty_sold = int(item['qty'])
-            unit_price = Decimal(str(item['price']))
-            sell_mode = item.get('sellMode', 'PIECE')
+    receipt_html = render_to_string('sales/partials/receipt_content.html',
+                                    {'sale': sale, 'location': sale.location}, request=request)
 
-            product = Product.objects.get(id=product_id)
-
-            # >> BREAK BULK MATHEMATICS <<
-            is_pair_sale = (sell_mode == 'PAIR' and product.is_sold_in_pairs)
-            pieces_to_deduct = qty_sold * 2 if is_pair_sale else qty_sold
-            actual_cost_limit = product.cost_price * 2 if is_pair_sale else product.cost_price
-
-            # >> THE COST GUARDRAIL <<
-            if unit_price < actual_cost_limit:
-                return JsonResponse({
-                    'success': False,
-                    'message': f"SECURITY ALERT: The selling price for '{product.name}' (₵{unit_price}) is below your Break-Even Cost (₵{actual_cost_limit}). Sale blocked."
-                }, status=400)
-
-            batches = StockBatch.objects.filter(
-                product=product, location=location, quantity__gt=0
-            ).order_by('expiry_date')
-
-            qty_needed = pieces_to_deduct
-
-            # Since we deduct actual pieces, we must divide the pair price in half for accounting
-            price_per_piece = unit_price / 2 if is_pair_sale else unit_price
-
-            for batch in batches:
-                if qty_needed <= 0: break
-                take = min(batch.quantity, qty_needed)
-
-                SaleItem.objects.create(
-                    sale=sale, product=product, source_batch=batch,
-                    quantity=take, unit_price=price_per_piece, unit_cost=batch.cost_price,
-                    total_price=take * price_per_piece
-                )
-
-                batch.quantity -= take
-                batch.save()
-                qty_needed -= take
-
-            if qty_needed > 0:
-                SaleItem.objects.create(
-                    sale=sale, product=product, source_batch=None,
-                    quantity=qty_needed, unit_price=price_per_piece, unit_cost=product.cost_price,
-                    total_price=qty_needed * price_per_piece
-                )
-
-        # --- 4. PROCESS PAYMENTS & CHANGE ---
-        total_paid = Decimal('0.00')
-        total_cash_tendered = Decimal('0.00')
-
-        for pay in payments:
-            amount = Decimal(str(pay['amount']))
-            method = pay['method']
-
-            SalePayment.objects.create(sale=sale, payment_method=method, amount=amount, processed_by=user)
-            total_paid += amount
-
-            if method == 'CASH':
-                total_cash_tendered += amount
-            elif method == 'MOMO':
-                session.total_momo_sales += amount
-            elif method == 'CARD':
-                session.total_card_sales += amount
-
-        change_due = max(Decimal('0.00'), total_paid - total_amount)
-
-        if change_due > 0:
-            SalePayment.objects.create(
-                sale=sale, payment_method='CASH', amount=-change_due,
-                reference_id="CHANGE GIVEN", processed_by=user
-            )
-            total_paid -= change_due
-
-        sale.amount_paid = total_paid
-        sale.change_due = change_due
-        sale.save()
-
-        # Update Session & Customer Stats
-        session.total_cash_sales += (total_cash_tendered - change_due)
-        session.save()
-
-        if customer_id:
-            try:
-                customer = Customer.objects.get(id=customer_id)
-                customer.total_spent += sale.total_amount
-                customer.total_visits += 1
-                customer.last_visit_date = timezone.now()
-                customer.save()
-            except Customer.DoesNotExist:
-                pass
-
-        return JsonResponse({'success': True, 'invoice_number': sale.invoice_number, 'sale_id': sale.id})
-
-    except Exception as e:
-        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+    session = sale.register_session
+    return JsonResponse({
+        'success': True,
+        'invoice_number': sale.invoice_number,
+        'sale_id': sale.id,
+        'total': float(sale.total_amount),
+        'paid': float(sale.amount_paid),
+        'change': float(sale.change_due),
+        'balance': float(sale.balance_remaining),
+        'receipt_html': receipt_html,
+        'shift': {k: float(v) if isinstance(v, Decimal) else v
+                  for k, v in _shift_stats(session).items()} if session else {},
+    })
 
 
+@login_required
+@require_GET
+def receipt_html(request, pk):
+    """Re-print a receipt for an existing sale."""
+    sale = get_object_or_404(Sale.objects.select_related('location', 'customer', 'cashier'), pk=pk)
+    location = services.resolve_location(request.user)
+    if request.user.role not in PRICE_VISIBLE_ROLES and sale.location_id != getattr(location, 'id', None):
+        return JsonResponse({'success': False, 'message': 'That receipt belongs to another shop.'}, status=403)
+    return JsonResponse({
+        'success': True,
+        'invoice_number': sale.invoice_number,
+        'receipt_html': render_to_string('sales/partials/receipt_content.html',
+                                         {'sale': sale, 'location': sale.location}, request=request),
+    })
+
+
+# ---------------------------------------------------------------------------
+# HISTORY
+# ---------------------------------------------------------------------------
 @login_required
 def sale_list(request):
     """
@@ -220,37 +454,38 @@ def sale_list(request):
     """
     user = request.user
 
-    # Base Query: Owner sees all, Staff sees assigned location
     if user.role == 'OWNER':
         sales = Sale.objects.all()
-        # Optional: Filter by specific location if passed in GET
         location_filter = request.GET.get('location')
         if location_filter:
             sales = sales.filter(location_id=location_filter)
     else:
-        sales = Sale.objects.filter(location=user.assigned_location)
+        sales = Sale.objects.filter(location=services.resolve_location(user))
 
     sales = sales.select_related('customer', 'cashier', 'location').order_by('-created_at')
 
-    # 1. Search (Invoice or Customer)
     query = request.GET.get('q')
     if query:
         sales = sales.filter(
-            Q(invoice_number__icontains=query) |
-            Q(customer__phone_number__icontains=query) |
-            Q(customer__first_name__icontains=query)
+            Q(invoice_number__icontains=query)
+            | Q(customer__phone_number__icontains=query)
+            | Q(customer__first_name__icontains=query)
+            | Q(customer__workshop_name__icontains=query)
         )
 
-    # 2. Status Filter (Enhanced for Debt)
     status = request.GET.get('status')
     if status:
         if status == 'DEBT':
-            # Find sales where amount paid is less than total amount
-            sales = sales.filter(amount_paid__lt=F('total_amount'))
+            sales = sales.filter(
+                status__in=Sale.REVENUE_STATUSES,
+            ).annotate(
+                outstanding=F('total_amount') - F('refunded_amount') - F('amount_paid')
+            ).filter(outstanding__gt=0)
+        elif status == 'OVERRIDE':
+            sales = sales.filter(has_price_override=True)
         else:
             sales = sales.filter(status=status)
 
-    # 3. Date Range
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     if start_date:
@@ -258,40 +493,77 @@ def sale_list(request):
     if end_date:
         sales = sales.filter(created_at__date__lte=end_date)
 
-    # Context for Owner Location Filter
-    locations = []
-    if user.role == 'OWNER':
-        locations = Location.objects.filter(is_active=True)
+    totals = sales.aggregate(
+        revenue=Sum('total_amount'),
+        refunded=Sum('refunded_amount'),
+        paid=Sum('amount_paid'),
+    )
+    summary = {
+        'revenue': q2(D(totals['revenue'] or 0) - D(totals['refunded'] or 0)),
+        'paid': q2(totals['paid'] or 0),
+        'outstanding': q2(D(totals['revenue'] or 0) - D(totals['refunded'] or 0) - D(totals['paid'] or 0)),
+    }
+
+    paginator = Paginator(sales, 50)
+    page = paginator.get_page(request.GET.get('page'))
 
     return render(request, 'sales/sale_list.html', {
-        'sales': sales,
+        'sales': page.object_list,
+        'page_obj': page,
+        'summary': summary,
+        'show_profit': _can_see_cost(user),
         'filters': {
             'q': query,
             'status': status,
             'start_date': start_date,
             'end_date': end_date,
-            'location': request.GET.get('location')
+            'location': request.GET.get('location'),
         },
-        'locations': locations
+        'locations': Location.objects.filter(is_active=True) if user.role == 'OWNER' else [],
     })
 
 
 @login_required
 def sale_detail(request, pk):
-    """
-    View Receipt / Sale Details.
-    """
-    sale = get_object_or_404(Sale, pk=pk)
-    return render(request, 'sales/sale_detail.html', {'sale': sale})
+    """View Receipt / Sale Details."""
+    sale = get_object_or_404(
+        Sale.objects.select_related('customer', 'cashier', 'location', 'register_session'),
+        pk=pk,
+    )
+    items = sale.items.select_related('product', 'source_batch').prefetch_related('batch_lines__batch')
+    return render(request, 'sales/sale_detail.html', {
+        'sale': sale,
+        'items': items,
+        'payments': sale.payments.select_related('processed_by', 'register_session'),
+        'show_profit': _can_see_cost(request.user),
+        'can_refund': request.user.role in MANAGER_ROLES,
+        'payment_methods': SalePayment.PaymentMethod.choices,
+    })
 
 
+# ---------------------------------------------------------------------------
+# REGISTER SESSIONS
+# ---------------------------------------------------------------------------
 @login_required
 def session_list(request):
-    """
-    List of cashier shifts (for closing/reconciling).
-    """
-    sessions = RegisterSession.objects.filter(location=request.user.assigned_location).order_by('-created_at')
-    return render(request, 'sales/session_list.html', {'sessions': sessions})
+    """List of cashier shifts (for closing/reconciling)."""
+    user = request.user
+    if user.role == 'OWNER':
+        sessions = RegisterSession.objects.all()
+    elif user.role in ('MANAGER', 'ACCOUNTANT'):
+        sessions = RegisterSession.objects.filter(location=services.resolve_location(user))
+    else:
+        sessions = RegisterSession.objects.filter(user=user)
+
+    sessions = sessions.select_related('user', 'location').order_by('-start_time')
+    paginator = Paginator(sessions, 50)
+    page = paginator.get_page(request.GET.get('page'))
+
+    return render(request, 'sales/session_list.html', {
+        'sessions': page.object_list,
+        'page_obj': page,
+        'open_session': services.get_open_session(user),
+    })
 
 
 @login_required
@@ -303,230 +575,195 @@ def close_register_view(request):
     3. System calculates variance.
     """
     user = request.user
-    location = user.assigned_location
-
-    # Get the active session
-    session = RegisterSession.objects.filter(
-        user=user,
-        location=location,
-        status=RegisterSession.Status.OPEN
-    ).first()
+    session = services.get_open_session(user)
 
     if not session:
         messages.error(request, "No open register session found.")
         return redirect('sales:sessions')
 
-    # Calculate Expected Totals
-    # Opening Balance + Cash Sales
-    expected_cash = session.opening_balance + session.total_cash_sales
+    session.recalculate()
 
     if request.method == 'POST':
-        # Get actual counts from form
-        actual_cash_str = request.POST.get('actual_cash', '0')
-        notes = request.POST.get('notes', '')
-
         try:
-            actual_cash = Decimal(actual_cash_str)
-        except:
-            actual_cash = Decimal('0.00')
+            services.close_session(
+                session=session,
+                user=user,
+                actual_cash=request.POST.get('actual_cash', '0'),
+                notes=request.POST.get('notes', ''),
+            )
+        except SaleError as exc:
+            messages.error(request, exc.message)
+            return redirect('sales:close_register')
 
-        # Update Session
-        session.closing_balance_expected = expected_cash
-        session.closing_balance_actual = actual_cash
-        session.end_time = timezone.now()
-        session.notes = notes
-
-        # Determine Status (Discrepancy Check)
-        if actual_cash != expected_cash:
-            session.status = RegisterSession.Status.DISCREPANCY
+        if session.status == RegisterSession.Status.DISCREPANCY:
+            messages.warning(
+                request,
+                f"Register closed with a variance of ₵{session.discrepancy:,.2f}. "
+                f"Expected ₵{session.closing_balance_expected:,.2f}, counted "
+                f"₵{session.closing_balance_actual:,.2f}."
+            )
         else:
-            session.status = RegisterSession.Status.CLOSED
-
-        session.save()
-
-        messages.success(request, "Register closed successfully.")
-        return redirect('sales:sessions')
+            messages.success(request, "Register closed and balanced exactly. Well done.")
+        return redirect('sales:session_detail', pk=session.pk)
 
     return render(request, 'sales/close_register.html', {
         'session': session,
-        'expected_cash': expected_cash
+        'expected_cash': session.expected_cash,
+        'stats': _shift_stats(session),
     })
 
 
 @login_required
 def session_detail(request, pk):
-    """
-    Detailed Report of a Cashier Shift (Session).
-    Shows financial reconciliation and discrepancy.
-    """
-    session = get_object_or_404(RegisterSession, pk=pk)
+    """Detailed Report of a Cashier Shift (Session)."""
+    session = get_object_or_404(RegisterSession.objects.select_related('user', 'location'), pk=pk)
 
-    # Security: Ensure user can see this session (Own session or Manager/Owner)
-    if request.user.role not in ['OWNER', 'MANAGER', 'ACCOUNTANT'] and session.user != request.user:
+    if request.user.role not in PRICE_VISIBLE_ROLES and session.user != request.user:
         messages.error(request, "You do not have permission to view this report.")
         return redirect('sales:sessions')
 
-    # Get all sales in this session
+    if session.status == RegisterSession.Status.OPEN:
+        session.recalculate()
+
     sales = session.sales.select_related('customer').order_by('-created_at')
 
-    context = {
+    return render(request, 'sales/session_detail.html', {
         'session': session,
         'sales': sales,
-    }
-    return render(request, 'sales/session_detail.html', context)
+        'stats': _shift_stats(session) if session.status == RegisterSession.Status.OPEN else None,
+        'payments': session.payments.select_related('sale').order_by('created_at'),
+        'expenses': session.expenses.select_related('category').order_by('created_at'),
+        'show_profit': _can_see_cost(request.user),
+    })
 
 
+# ---------------------------------------------------------------------------
+# DEBT & REFUNDS
+# ---------------------------------------------------------------------------
 @login_required
 @require_POST
-@transaction.atomic
 def add_payment(request, pk):
-    """
-    Settle Debt: Add a payment to an existing sale.
-    """
+    """Settle Debt: Add a payment to an existing sale."""
     sale = get_object_or_404(Sale, pk=pk)
-    user = request.user
-
-    # 1. Get Active Session (Money goes to CURRENT drawer, not original sale drawer)
-    session = RegisterSession.objects.filter(
-        user=user,
-        location=user.assigned_location,
-        status=RegisterSession.Status.OPEN
-    ).first()
-
-    if not session:
-        messages.error(request, "You must have an open register to accept payments.")
+    try:
+        payment = services.settle_debt(
+            sale=sale,
+            user=request.user,
+            amount=request.POST.get('amount', 0),
+            method=request.POST.get('payment_method', ''),
+            reference=request.POST.get('reference', ''),
+        )
+    except SaleError as exc:
+        messages.error(request, exc.message)
         return redirect('sales:detail', pk=pk)
 
-    # 2. Process Form Data
-    amount = Decimal(request.POST.get('amount', 0))
-    method = request.POST.get('payment_method')
-
-    if amount <= 0:
-        messages.error(request, "Invalid amount.")
-        return redirect('sales:detail', pk=pk)
-
-    # Check if overpaying
-    balance = sale.total_amount - sale.amount_paid
-    if amount > balance:
-        # Optional: Allow overpayment as change/tip? For now, stick to balance.
-        # messages.warning(request, "Amount exceeds balance. adjusted.")
-        # amount = balance
-        pass
-
-        # 3. Create Payment Record
-    SalePayment.objects.create(
-        sale=sale,
-        payment_method=method,
-        amount=amount,
-        processed_by=user
-    )
-
-    # 4. Update Sale Totals
-    sale.amount_paid += amount
-    # Recalculate Change Due (if they paid off everything and exceeded)
-    # Usually for debt settlement, change is handled physically, record exact payment.
-    sale.change_due = max(Decimal('0.00'), sale.amount_paid - sale.total_amount)
-
-    # Update Status if fully paid
-    if sale.amount_paid >= sale.total_amount:
-        sale.status = Sale.Status.COMPLETED
-        # If it was pending/partial, mark completed?
-        # Usually we keep status as COMPLETED but maybe add a 'paid_in_full' flag logic
-        pass
-
-    sale.save()
-
-    # 5. Update Current Register Session
-    if method == 'CASH':
-        session.total_cash_sales += amount
-    elif method == 'MOMO':
-        session.total_momo_sales += amount
-    elif method == 'CARD':
-        session.total_card_sales += amount
-    session.save()
-
-    messages.success(request, f"Payment of {amount} recorded successfully.")
+    sale.refresh_from_db()
+    if sale.balance_remaining > 0:
+        messages.success(
+            request,
+            f"₵{payment.amount:,.2f} received. ₵{sale.balance_remaining:,.2f} still outstanding."
+        )
+    else:
+        messages.success(request, f"₵{payment.amount:,.2f} received. Invoice is now fully settled.")
     return redirect('sales:detail', pk=pk)
 
 
 @login_required
-@transaction.atomic
 def process_refund(request, pk):
-    """
-    Handle Full or Partial Refunds.
-    Restocks inventory and updates sales records.
-    """
-    sale = get_object_or_404(Sale, pk=pk)
+    """Handle Full or Partial Refunds -- restocks inventory and reverses money."""
+    sale = get_object_or_404(Sale.objects.select_related('customer', 'location'), pk=pk)
 
-    # Permission Check
-    if request.user.role not in ['OWNER', 'MANAGER']:
+    if request.user.role not in MANAGER_ROLES:
         messages.error(request, "Only Managers can process refunds.")
         return redirect('sales:detail', pk=pk)
 
     if request.method == 'POST':
-        refund_reason = request.POST.get('reason', 'Customer Return')
-        items_to_refund = request.POST.getlist('refund_items')  # List of SaleItem IDs
+        lines = []
+        for item in sale.items.all():
+            raw = request.POST.get(f'refund_qty_{item.id}')
+            if raw:
+                try:
+                    quantity = int(raw)
+                except ValueError:
+                    quantity = 0
+                if quantity > 0:
+                    lines.append({'item_id': item.id, 'quantity': quantity})
 
-        total_refund_amount = Decimal('0.00')
+        try:
+            result = services.refund_sale(
+                sale=sale,
+                user=request.user,
+                lines=lines,
+                reason=request.POST.get('reason', 'Customer return'),
+                refund_method=request.POST.get('refund_method', 'CASH'),
+                restock=request.POST.get('restock', 'on') == 'on',
+            )
+        except SaleError as exc:
+            messages.error(request, exc.message)
+            return redirect('sales:refund', pk=pk)
 
-        for item_id in items_to_refund:
-            sale_item = get_object_or_404(SaleItem, id=item_id, sale=sale)
-
-            if not sale_item.is_refunded:
-                # 1. Update Item Status
-                sale_item.is_refunded = True
-                sale_item.save()
-
-                # 2. Restore Stock (if batch exists)
-                if sale_item.source_batch:
-                    sale_item.source_batch.quantity += sale_item.quantity
-                    sale_item.source_batch.save()
-
-                    # Log Adjustment
-                    StockAdjustment.objects.create(
-                        location=sale.location,
-                        batch=sale_item.source_batch,
-                        adjusted_quantity=sale_item.quantity,
-                        reason='RETURN',  # Ensure 'RETURN' is in Reason choices or use closest match
-                        notes=f"Refund for Invoice #{sale.invoice_number}",
-                        performed_by=request.user
-                    )
-
-                total_refund_amount += sale_item.total_price
-
-        # 3. Update Sale Status
-        if total_refund_amount > 0:
-            # If all items refunded, mark sale as REFUNDED, else PARTIAL
-            all_refunded = not sale.items.filter(is_refunded=False).exists()
-            sale.status = Sale.Status.REFUNDED if all_refunded else Sale.Status.PARTIAL_REFUND
-            sale.save()
-
-            messages.success(request, f"Refund processed. Amount: {total_refund_amount}")
-        else:
-            messages.warning(request, "No items selected for refund.")
-
+        parts = [f"Refunded ₵{result['refund_value']:,.2f}"]
+        if result['offset_against_debt'] > 0:
+            parts.append(f"₵{result['offset_against_debt']:,.2f} written off the mechanic's debt")
+        if result['cash_back'] > 0:
+            parts.append(f"₵{result['cash_back']:,.2f} paid back out of the drawer")
+        messages.success(request, ". ".join(parts) + ".")
         return redirect('sales:detail', pk=pk)
 
-    return render(request, 'sales/process_refund.html', {'sale': sale})
+    return render(request, 'sales/process_refund.html', {
+        'sale': sale,
+        'items': sale.items.select_related('product'),
+        'payment_methods': [c for c in SalePayment.PaymentMethod.choices if c[0] != 'CREDIT'],
+    })
 
 
 @login_required
+def refund_list(request):
+    """Specific list for Returned/Refunded transactions."""
+    user = request.user
+    if user.role == 'OWNER':
+        refunds = Sale.objects.all()
+    else:
+        refunds = Sale.objects.filter(location=services.resolve_location(user))
+
+    refunds = refunds.filter(
+        status__in=[Sale.Status.REFUNDED, Sale.Status.PARTIAL_REFUND]
+    ).select_related('customer', 'cashier').order_by('-updated_at')
+
+    total_refunded = refunds.aggregate(total=Sum('refunded_amount'))['total'] or ZERO
+
+    return render(request, 'sales/refund_list.html', {
+        'refunds': refunds,
+        'total_refunded': q2(total_refunded),
+    })
+
+
+# ---------------------------------------------------------------------------
+# DELIVERIES
+# ---------------------------------------------------------------------------
+@login_required
 def delivery_management(request, pk=None):
-    """
-    Manage Deliveries.
-    If pk is provided, edit specific delivery. Else list pending.
-    """
+    """Manage Deliveries. If pk is provided, edit specific delivery. Else list pending."""
     if pk:
-        # Edit/Update Delivery Status
         delivery = get_object_or_404(Delivery, pk=pk)
         if request.method == 'POST':
             status = request.POST.get('status')
             rider_name = request.POST.get('rider_name')
             tracking_ref = request.POST.get('tracking_ref')
+            cost = request.POST.get('cost_to_business')
 
-            if status: delivery.status = status
-            if rider_name: delivery.rider_name = rider_name
-            if tracking_ref: delivery.tracking_reference = tracking_ref
+            if status:
+                delivery.status = status
+            if rider_name:
+                delivery.rider_name = rider_name
+            if tracking_ref:
+                delivery.tracking_reference = tracking_ref
+            if cost:
+                try:
+                    delivery.cost_to_business = q2(cost)
+                except ValueError:
+                    messages.error(request, "Delivery cost must be a number.")
+                    return redirect('sales:delivery_edit', pk=pk)
 
             if status == 'DELIVERED':
                 delivery.delivered_at = timezone.now()
@@ -535,40 +772,11 @@ def delivery_management(request, pk=None):
 
             delivery.save()
             messages.success(request, "Delivery updated.")
-            return redirect('sales:deliveries')  # Redirect to list
+            return redirect('sales:deliveries')
 
         return render(request, 'sales/delivery_form.html', {'delivery': delivery})
 
-    else:
-        # List View
-        deliveries = Delivery.objects.filter(
-            sale__location=request.user.assigned_location
-        ).order_by('-created_at')
-        return render(request, 'sales/delivery_list.html', {'deliveries': deliveries})
-
-
-@login_required
-def refund_list(request):
-    """
-    Specific list for Returned/Refunded transactions.
-    """
-    user = request.user
-
-    # Base Query
-    if user.role == 'OWNER':
-        refunds = Sale.objects.all()
-    else:
-        refunds = Sale.objects.filter(location=user.assigned_location)
-
-    # Filter for Refunded Statuses
-    refunds = refunds.filter(
-        status__in=[Sale.Status.REFUNDED, Sale.Status.PARTIAL_REFUND]
-    ).select_related('customer', 'cashier').order_by('-updated_at')
-
-    return render(request, 'sales/refund_list.html', {'refunds': refunds})
-
-
-
-
-
-
+    deliveries = Delivery.objects.filter(
+        sale__location=services.resolve_location(request.user)
+    ).select_related('sale', 'sale__customer').order_by('-created_at')
+    return render(request, 'sales/delivery_list.html', {'deliveries': deliveries})

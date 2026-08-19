@@ -9,9 +9,17 @@
   <div class="card-header border-bottom">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h5 class="mb-0">Product Catalog</h5>
-        <a href="{% url 'products:product_create' %}" class="btn btn-primary">
-            <i class="ri-add-line me-1"></i> Add Product
-        </a>
+        <div class="d-flex gap-2">
+            {% if suggestion_count %}
+            <a href="{% url 'products:price_suggestions' %}" class="btn btn-label-warning fw-bold">
+                <i class="ri-price-tag-3-line me-1"></i>
+                {{ suggestion_count }} price suggestion{{ suggestion_count|pluralize }}
+            </a>
+            {% endif %}
+            <a href="{% url 'products:product_create' %}" class="btn btn-primary">
+                <i class="ri-add-line me-1"></i> Add Product
+            </a>
+        </div>
     </div>
 
     <!-- Filter Form -->
@@ -74,8 +82,9 @@
           <th>Product</th>
           <th>Category</th>
           <th>SKU / Barcode</th>
-          <th>Cost</th>
-          <th>Price</th>
+          <th class="text-center">Stock</th>
+          {% if show_cost %}<th class="text-end">Cost</th>{% endif %}
+          <th class="text-end">Price</th>
           <th>Status</th>
           <th class="text-center">Actions</th>
         </tr>
@@ -94,9 +103,19 @@
                 </div>
                 <div>
                     <a href="{% url 'products:product_detail' product.pk %}" class="fw-bold text-heading">{{ product.name }}</a>
-                    {% if product.brand %}
-                    <br><small class="text-muted">{{ product.brand.name }}</small>
+                    {% if product.is_sold_in_pairs %}
+                    <span class="badge bg-label-primary ms-1" title="Priced per pair; can be split">PAIR</span>
                     {% endif %}
+                    {% if product.suggested_selling_price %}
+                    <a href="{% url 'products:price_suggestions' %}" class="badge bg-label-warning ms-1"
+                       title="A shipment suggested ₵{{ product.suggested_selling_price|floatformat:2 }}">PRICE PENDING</a>
+                    {% endif %}
+                    <div>
+                        {% if product.brand %}<small class="text-muted">{{ product.brand.name }}</small>{% endif %}
+                        {% if product.shelf_location %}
+                        <small class="text-muted">· <i class="ri-map-pin-line"></i> {{ product.shelf_location }}</small>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
           </td>
@@ -109,8 +128,35 @@
                 {% endif %}
             </div>
           </td>
-          <td>{{ product.cost_price|intcomma }}</td>
-          <td><strong>{{ product.selling_price|intcomma }}</strong></td>
+          <td class="text-center">
+            {% if product.pieces > 0 %}
+                <span class="badge {% if product.pieces <= product.low_stock_threshold %}bg-label-warning{% else %}bg-label-success{% endif %}">
+                    {{ product.pieces }} pc{{ product.pieces|pluralize }}
+                </span>
+                <div class="small text-muted">
+                    {{ product.batch_count }} batch{{ product.batch_count|pluralize:"es" }}
+                </div>
+            {% else %}
+                <span class="badge bg-label-danger">OUT</span>
+            {% endif %}
+          </td>
+          {% if show_cost %}
+          <td class="text-end">
+            {{ product.cost_price|floatformat:2|intcomma }}
+            {% if product.is_sold_in_pairs %}
+            <div class="small text-muted">per piece</div>
+            {% endif %}
+          </td>
+          {% endif %}
+          <td class="text-end">
+            <strong>{{ product.selling_price|floatformat:2|intcomma }}</strong>
+            {% if product.is_sold_in_pairs %}
+            <div class="small text-muted">
+                /pair · single {{ product.effective_single_price|floatformat:2|intcomma }}
+                {% if product.split_price_mode == 'PERCENT' %}({{ product.split_price_percentage|floatformat:0 }}%){% endif %}
+            </div>
+            {% endif %}
+          </td>
           <td>
             {% if product.is_active %}
                 <span class="badge bg-label-success me-1">Active</span>
@@ -137,7 +183,7 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="7" class="text-center py-5">
+            <td colspan="9" class="text-center py-5">
                 <div class="text-muted">
                     <i class="ri-search-2-line ri-3x mb-3"></i>
                     <p>No products found matching your criteria.</p>

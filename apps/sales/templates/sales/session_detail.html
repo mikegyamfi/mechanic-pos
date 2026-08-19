@@ -64,38 +64,136 @@
                     </div>
                 </div>
 
-                <!-- 2. Sales Breakdown -->
-                <h6 class="fw-bold text-muted text-uppercase mb-3">Sales Breakdown</h6>
+                <!-- 2. Money Breakdown (rebuilt from the payment rows, not counters) -->
+                <h6 class="fw-bold text-muted text-uppercase mb-3">Money Breakdown</h6>
                 <div class="table-responsive border rounded mb-4">
                     <table class="table table-borderless mb-0">
                         <thead class="bg-light">
                             <tr>
                                 <th>Method</th>
-                                <th class="text-end">Amount Collected</th>
+                                <th class="text-end">Net Collected</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td><i class="ri-money-dollar-box-line me-2"></i> Cash Sales</td>
-                                <td class="text-end fw-bold">{{ session.total_cash_sales|intcomma }}</td>
+                                <td>
+                                    <i class="ri-money-dollar-box-line me-2"></i> Cash
+                                    <small class="text-muted d-block ms-4">net of change handed back</small>
+                                </td>
+                                <td class="text-end fw-bold">{{ session.total_cash_sales|floatformat:2|intcomma }}</td>
                             </tr>
                             <tr>
                                 <td><i class="ri-smartphone-line me-2"></i> Mobile Money</td>
-                                <td class="text-end fw-bold">{{ session.total_momo_sales|intcomma }}</td>
+                                <td class="text-end fw-bold">{{ session.total_momo_sales|floatformat:2|intcomma }}</td>
                             </tr>
                             <tr>
                                 <td><i class="ri-bank-card-line me-2"></i> Card / POS Terminal</td>
-                                <td class="text-end fw-bold">{{ session.total_card_sales|intcomma }}</td>
+                                <td class="text-end fw-bold">{{ session.total_card_sales|floatformat:2|intcomma }}</td>
                             </tr>
+                            {% if session.total_bank_sales %}
+                            <tr>
+                                <td><i class="ri-bank-line me-2"></i> Bank Transfer</td>
+                                <td class="text-end fw-bold">{{ session.total_bank_sales|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if session.total_cheque_sales %}
+                            <tr>
+                                <td><i class="ri-file-paper-2-line me-2"></i> Cheque</td>
+                                <td class="text-end fw-bold">{{ session.total_cheque_sales|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% endif %}
                             <tr class="border-top">
-                                <td class="fw-bold text-primary">TOTAL REVENUE</td>
+                                <td class="fw-bold text-primary">TOTAL COLLECTED</td>
                                 <td class="text-end fw-bold text-primary fs-5">
-                                    {{ session.total_cash_sales|add:session.total_momo_sales|add:session.total_card_sales|intcomma }}
+                                    {{ session.total_collected|floatformat:2|intcomma }}
                                 </td>
                             </tr>
+                            {% if session.total_cash_refunds %}
+                            <tr>
+                                <td class="text-danger"><i class="ri-arrow-go-back-line me-2"></i> Cash refunds paid out</td>
+                                <td class="text-end fw-bold text-danger">
+                                    −{{ session.total_cash_refunds|floatformat:2|intcomma }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if session.total_till_expenses %}
+                            <tr>
+                                <td class="text-danger"><i class="ri-wallet-line me-2"></i> Expenses from the till</td>
+                                <td class="text-end fw-bold text-danger">
+                                    −{{ session.total_till_expenses|floatformat:2|intcomma }}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if session.total_credit_extended %}
+                            <tr>
+                                <td class="text-warning">
+                                    <i class="ri-hand-coin-line me-2"></i> Goods given on credit
+                                    <small class="text-muted d-block ms-4">not money — a debt owed to you</small>
+                                </td>
+                                <td class="text-end fw-bold text-warning">
+                                    {{ session.total_credit_extended|floatformat:2|intcomma }}
+                                </td>
+                            </tr>
+                            {% endif %}
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Every movement, so a variance can actually be traced -->
+                {% if payments %}
+                <h6 class="fw-bold text-muted text-uppercase mb-2">Every money movement in this shift</h6>
+                <div class="table-responsive border rounded mb-4" style="max-height: 320px; overflow-y: auto;">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="bg-light">
+                            <tr>
+                                <th>Time</th>
+                                <th>Invoice</th>
+                                <th>Type</th>
+                                <th>Method</th>
+                                <th>Reference</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in payments %}
+                            <tr>
+                                <td>{{ payment.created_at|date:"H:i" }}</td>
+                                <td>
+                                    <a href="{% url 'sales:detail' payment.sale_id %}">
+                                        {{ payment.sale.invoice_number|slice:"4:" }}
+                                    </a>
+                                </td>
+                                <td><span class="badge bg-label-secondary">{{ payment.get_entry_type_display }}</span></td>
+                                <td>{{ payment.get_payment_method_display }}</td>
+                                <td><small class="text-muted">{{ payment.reference_id|default:"—" }}</small></td>
+                                <td class="text-end fw-bold {% if payment.amount < 0 %}text-danger{% endif %}">
+                                    {{ payment.amount|floatformat:2|intcomma }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if expenses %}
+                <h6 class="fw-bold text-muted text-uppercase mb-2">Cash taken out for expenses</h6>
+                <div class="table-responsive border rounded mb-4">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for expense in expenses %}
+                            <tr>
+                                <td>{{ expense.created_at|date:"H:i" }}</td>
+                                <td>{{ expense.category.name }}</td>
+                                <td><small class="text-muted">{{ expense.description|truncatechars:60 }}</small></td>
+                                <td><span class="badge bg-label-secondary">{{ expense.get_status_display }}</span></td>
+                                <td class="text-end fw-bold text-danger">−{{ expense.amount|floatformat:2|intcomma }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
 
                 <!-- 3. Notes & Timing -->
                 <div class="row mb-4">

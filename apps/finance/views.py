@@ -1,10 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+from django.db.models import Count, Sum, F, ExpressionWrapper, DecimalField
 from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
+
+from apps.core.money import D, q2
 
 from .models import Expense, Tax
 from .forms import ExpenseForm
@@ -54,8 +56,10 @@ def expense_create(request):
     if request.method == 'POST':
         form = ExpenseForm(request.POST, request.FILES)
         if form.is_valid():
+            from apps.sales import services as sales_services
+
             expense = form.save(commit=False)
-            expense.location = user.assigned_location
+            expense.location = sales_services.resolve_location(user)
             expense.requested_by = user
 
             # Auto-approve if Owner
@@ -65,8 +69,27 @@ def expense_create(request):
             else:
                 expense.status = Expense.Status.PENDING
 
+            # Cash out of the till must name the drawer it left, or the shift
+            # will look short by exactly this amount at closing time.
+            session = sales_services.get_open_session(user)
+            if expense.is_paid_from_till:
+                if session is None:
+                    messages.error(request, "Open your register before recording a cash expense from the till.")
+                    return render(request, 'finance/expense_form.html',
+                                  {'form': form, 'title': 'Record Expense'})
+                expense.register_session = session
+
             expense.save()
-            messages.success(request, "Expense recorded successfully.")
+
+            if expense.register_session_id:
+                expense.register_session.recalculate()
+                messages.success(
+                    request,
+                    f"Expense recorded. ₵{expense.amount:,.2f} has been taken off the expected "
+                    f"cash in your drawer."
+                )
+            else:
+                messages.success(request, "Expense recorded successfully.")
             return redirect('finance:expenses_list')
     else:
         form = ExpenseForm(initial={'date_incurred': timezone.now().date(), 'is_paid_from_till': True})
@@ -98,6 +121,10 @@ def expense_approve(request, pk):
 
         expense.save()
 
+        # A rejected till expense goes back into the expected drawer balance.
+        if expense.register_session_id:
+            expense.register_session.recalculate()
+
     return redirect('finance:expenses_list')
 
 
@@ -126,59 +153,68 @@ def profit_loss_view(request):
     else:
         end_date = today
 
-    # Base Filter: Owner sees all, Manager sees assigned location
+    # Base Filter: Owner sees all, Manager sees assigned location.
+    # PARTIAL refunds stay in scope: their remaining lines are still real
+    # revenue, and `refunded_amount` nets off the part that came back.
     if user.role == 'OWNER':
-        sales_qs = Sale.objects.filter(status=Sale.Status.COMPLETED)
-        items_qs = SaleItem.objects.filter(sale__status=Sale.Status.COMPLETED)
+        sales_qs = Sale.objects.filter(status__in=Sale.REVENUE_STATUSES)
         expenses_qs = Expense.objects.filter(status=Expense.Status.APPROVED)
     else:
         loc = user.assigned_location
-        sales_qs = Sale.objects.filter(location=loc, status=Sale.Status.COMPLETED)
-        items_qs = SaleItem.objects.filter(sale__location=loc, sale__status=Sale.Status.COMPLETED)
+        sales_qs = Sale.objects.filter(location=loc, status__in=Sale.REVENUE_STATUSES)
         expenses_qs = Expense.objects.filter(location=loc, status=Expense.Status.APPROVED)
 
     # Apply Date Range
     sales_qs = sales_qs.filter(created_at__date__range=[start_date, end_date])
-    items_qs = items_qs.filter(sale__created_at__date__range=[start_date, end_date])
     expenses_qs = expenses_qs.filter(date_incurred__range=[start_date, end_date])
 
-    # 1. Total Revenue
-    total_revenue = Decimal(str(sales_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or '0.00')).quantize(Decimal('0.01'))
+    # 1. Revenue and 2. COGS come off the invoice roll-ups, which the sale
+    # service keeps exact (refunds reduce both sides as goods go back on the
+    # shelf). Aggregating items separately here would double-count nothing but
+    # would miss the refund adjustments.
+    totals = sales_qs.aggregate(
+        revenue=Sum('total_amount'),
+        refunded=Sum('refunded_amount'),
+        cogs=Sum('total_cost'),
+        invoices=Count('id'),
+    )
 
-    # 2. Cost of Goods Sold (COGS)
-    total_cogs_raw = items_qs.annotate(
-        line_cost=ExpressionWrapper(
-            F('unit_cost') * F('quantity'),
-            output_field=DecimalField()
-        )
-    ).aggregate(Sum('line_cost'))['line_cost__sum'] or '0.00'
-    total_cogs = Decimal(str(total_cogs_raw)).quantize(Decimal('0.01'))
+    total_revenue = q2(D(totals['revenue'] or 0) - D(totals['refunded'] or 0))
+    total_refunds = q2(totals['refunded'] or 0)
+    total_cogs = q2(totals['cogs'] or 0)
+    invoice_count = totals['invoices'] or 0
 
     # 3. Gross Profit
-    gross_profit = (total_revenue - total_cogs).quantize(Decimal('0.01'))
+    gross_profit = q2(total_revenue - total_cogs)
 
     # 4. Expenses
-    total_expenses = Decimal(str(expenses_qs.aggregate(Sum('amount'))['amount__sum'] or '0.00')).quantize(Decimal('0.01'))
+    total_expenses = q2(expenses_qs.aggregate(Sum('amount'))['amount__sum'] or 0)
 
     # 5. Net Profit
-    net_profit = (gross_profit - total_expenses).quantize(Decimal('0.01'))
+    net_profit = q2(gross_profit - total_expenses)
 
     # Expense Breakdown for Charts/Table
-    expense_breakdown_raw = expenses_qs.values('category__name').annotate(total=Sum('amount')).order_by('-total')
     expense_breakdown = [
-        {'category__name': exp['category__name'], 'total': Decimal(str(exp['total'])).quantize(Decimal('0.01'))}
-        for exp in expense_breakdown_raw
+        {'category__name': exp['category__name'], 'total': q2(exp['total'])}
+        for exp in expenses_qs.values('category__name').annotate(total=Sum('amount')).order_by('-total')
     ]
+
+    gross_margin = q2(gross_profit / total_revenue * 100) if total_revenue > 0 else Decimal('0.00')
+    net_margin = q2(net_profit / total_revenue * 100) if total_revenue > 0 else Decimal('0.00')
 
     context = {
         'start_date': start_date.strftime("%Y-%m-%d"),
         'end_date': end_date.strftime("%Y-%m-%d"),
         'total_revenue': total_revenue,
+        'total_refunds': total_refunds,
+        'invoice_count': invoice_count,
         'total_cogs': total_cogs,
         'gross_profit': gross_profit,
+        'gross_margin': gross_margin,
         'total_expenses': total_expenses,
         'net_profit': net_profit,
-        'expense_breakdown': expense_breakdown
+        'net_margin': net_margin,
+        'expense_breakdown': expense_breakdown,
     }
     return render(request, 'finance/profit_loss.html', context)
 

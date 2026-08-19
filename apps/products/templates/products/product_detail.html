@@ -48,21 +48,59 @@
                 </div>
 
                 <!-- Pricing Table -->
-                <div class="table-responsive border rounded mb-4">
-                    <table class="table table-sm">
+                <div class="table-responsive border rounded mb-3">
+                    <table class="table table-sm mb-0">
                         <tbody>
                             <tr>
-                                <td class="text-muted ps-3">Selling Price</td>
-                                <td class="fw-bold text-end pe-3">{{ product.selling_price|intcomma }}</td>
+                                <td class="text-muted ps-3">
+                                    Selling Price
+                                    {% if product.is_sold_in_pairs %}<span class="badge bg-label-primary">PAIR</span>{% endif %}
+                                </td>
+                                <td class="fw-bold text-end pe-3">₵{{ product.selling_price|floatformat:2|intcomma }}</td>
                             </tr>
+                            {% if product.is_sold_in_pairs %}
                             <tr>
-                                <td class="text-muted ps-3">Cost Price</td>
-                                <td class="text-end pe-3">{{ product.cost_price|intcomma }}</td>
+                                <td class="text-muted ps-3">
+                                    Single piece
+                                    <small class="d-block text-muted">
+                                        {% if product.split_price_mode == 'PERCENT' %}
+                                            {{ product.split_price_percentage|floatformat:0 }}% of the pair price, auto-updating
+                                        {% else %}
+                                            fixed amount
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td class="fw-bold text-end pe-3 text-primary">₵{{ single_price|floatformat:2|intcomma }}</td>
                             </tr>
+                            {% endif %}
                             {% if product.wholesale_price %}
                             <tr>
                                 <td class="text-muted ps-3">Wholesale</td>
-                                <td class="text-end pe-3">{{ product.wholesale_price|intcomma }}</td>
+                                <td class="text-end pe-3">
+                                    ₵{{ product.wholesale_price|floatformat:2|intcomma }}
+                                    {% if product.is_sold_in_pairs %}
+                                    <div class="small text-muted">single ₵{{ single_wholesale|floatformat:2|intcomma }}</div>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% if show_cost %}
+                            <tr>
+                                <td class="text-muted ps-3">
+                                    Cost Price
+                                    <small class="d-block text-muted">weighted average of batches on hand</small>
+                                </td>
+                                <td class="text-end pe-3">
+                                    ₵{{ product.cost_price|floatformat:2|intcomma }}
+                                    {% if weighted_cost and weighted_cost != product.cost_price %}
+                                    <div class="small text-warning fw-bold">
+                                        batches say ₵{{ weighted_cost|floatformat:2|intcomma }}
+                                    </div>
+                                    {% endif %}
+                                    {% if product.is_sold_in_pairs %}
+                                    <div class="small text-muted">per piece</div>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% endif %}
                             <tr>
@@ -72,6 +110,20 @@
                         </tbody>
                     </table>
                 </div>
+
+                {% if product.suggested_selling_price %}
+                <div class="alert alert-warning py-2 small">
+                    <strong>Price suggestion waiting:</strong>
+                    a shipment proposed ₵{{ product.suggested_selling_price|floatformat:2|intcomma }}
+                    ({{ product.suggested_price_source }}). Your manual price was kept.
+                    <a href="{% url 'products:price_suggestions' %}" class="alert-link">Review</a>
+                </div>
+                {% elif product.price_is_manual %}
+                <div class="alert alert-primary py-2 small mb-3">
+                    <i class="ri-lock-line"></i> This price is managed by hand — receiving a
+                    shipment will not overwrite it.
+                </div>
+                {% endif %}
 
                 <!-- Logistics -->
                 <h6 class="text-muted text-uppercase fs-tiny fw-bold">Logistics</h6>
@@ -145,46 +197,110 @@
             </div>
         </div>
 
-        <!-- Recent Batches -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Recent Batches</h5>
+        <!-- Batches on hand: each with its own real cost -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="card-title mb-0">Batches on hand</h5>
+                    <small class="text-muted">
+                        Each batch keeps the cost it actually arrived at. The product cost above is
+                        their weighted average, so margins never contradict the batches.
+                    </small>
+                </div>
+                {% if stock_value %}
+                <div class="text-end">
+                    <small class="text-muted d-block">Stock value</small>
+                    <strong class="text-primary">₵{{ stock_value|floatformat:2|intcomma }}</strong>
+                </div>
+                {% endif %}
             </div>
             <div class="table-responsive text-nowrap">
-                <table class="table table-hover">
+                <table class="table table-hover mb-0">
                     <thead>
                         <tr>
                             <th>Batch #</th>
                             <th>Location</th>
-                            <th>Qty</th>
-                            <th>Expiry</th>
-                            <th>Rec'd Date</th>
+                            <th>Supplier</th>
+                            <th class="text-center">On hand</th>
+                            <th class="text-center">Sold</th>
+                            {% if show_cost %}<th class="text-end">Cost/pc</th><th class="text-end">Value</th>{% endif %}
+                            <th>Received</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for batch in recent_batches %}
+                        {% for batch in batches %}
                         <tr>
-                            <td>{{ batch.batch_number|default:"-" }}</td>
-                            <td>{{ batch.location.name }}</td>
-                            <td>{{ batch.quantity }}</td>
                             <td>
-                                {% if batch.expiry_date %}
-                                    {{ batch.expiry_date|date:"d M Y" }}
-                                {% else %}
-                                    -
-                                {% endif %}
+                                <a href="{% url 'inventory:batch_detail' batch.pk %}" class="fw-bold">
+                                    {{ batch.batch_number|default:"-" }}
+                                </a>
                             </td>
+                            <td>{{ batch.location.name }}</td>
+                            <td><small class="text-muted">{{ batch.supplier.name|default:"-" }}</small></td>
+                            <td class="text-center fw-bold">{{ batch.quantity }}</td>
+                            <td class="text-center">
+                                <small class="text-muted">{{ batch.quantity_sold }} of {{ batch.initial_quantity }}</small>
+                            </td>
+                            {% if show_cost %}
+                            <td class="text-end">₵{{ batch.cost_price|floatformat:2|intcomma }}</td>
+                            <td class="text-end">₵{{ batch.stock_value|floatformat:2|intcomma }}</td>
+                            {% endif %}
                             <td>{{ batch.received_date|date:"d M Y" }}</td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center py-4">No recent batch history.</td>
+                            <td colspan="8" class="text-center py-4 text-danger fw-semibold">
+                                No stock of this part anywhere.
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
+
+        <!-- Price history -->
+        {% if show_cost %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Price history</h5>
+                <small class="text-muted">Every price movement, with a name against it.</small>
+            </div>
+            <div class="table-responsive text-nowrap">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>When</th>
+                            <th>Field</th>
+                            <th class="text-end">From</th>
+                            <th class="text-end">To</th>
+                            <th>Source</th>
+                            <th>By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in price_history %}
+                        <tr class="{% if not entry.was_applied %}text-muted{% endif %}">
+                            <td>{{ entry.created_at|date:"d M Y H:i" }}</td>
+                            <td>{{ entry.field|cut:"_"|title }}</td>
+                            <td class="text-end">{{ entry.old_value|default:"—"|floatformat:2|intcomma }}</td>
+                            <td class="text-end fw-bold">{{ entry.new_value|floatformat:2|intcomma }}</td>
+                            <td>
+                                <span class="badge bg-label-secondary">{{ entry.get_source_display }}</span>
+                                {% if not entry.was_applied %}
+                                <span class="badge bg-label-warning">not applied</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ entry.changed_by.username|default:"system" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center py-4">No price changes recorded yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

@@ -1,14 +1,18 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.db.models import Sum, Count, Q
+from django.db.models import Count, DecimalField, F, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from datetime import timedelta
 from decimal import Decimal
 
 from apps.analytics.models import DailyShopSummary
+from apps.core.money import D, q2
+from apps.sales import services as sales_services
 from apps.sales.models import Sale, SalePayment
 from apps.inventory.models import StockBatch
 from apps.location.models import Location
+from apps.products.models import Product
 
 
 @login_required
@@ -73,7 +77,7 @@ def owner_analytics(request):
     # --- 2. Base Querysets ---
     sales_qs = Sale.objects.filter(
         created_at__date=today,
-        status=Sale.Status.COMPLETED,
+        status__in=Sale.REVENUE_STATUSES,
         location__in=analytics_scope
     )
 
@@ -86,7 +90,7 @@ def owner_analytics(request):
     historical_sales_qs = Sale.objects.filter(
         location__in=analytics_scope,
         created_at__date__gte=start_date,
-        status=Sale.Status.COMPLETED
+        status__in=Sale.REVENUE_STATUSES
     )
 
     # --- 3. Role-Specific Filters ---
@@ -99,33 +103,56 @@ def owner_analytics(request):
         historical_sales_qs = historical_sales_qs.filter(cashier=user)
         current_view_name = f"My Sales ({current_view_name})"
 
+    # The shift the user has open right now, if any -- so a salesperson can see
+    # their own drawer without walking to the close-register screen.
+    open_session = sales_services.get_open_session(user)
+    session_stats = None
+    if open_session:
+        open_session.recalculate()
+        session_stats = {
+            'opening': q2(open_session.opening_balance),
+            'cash': q2(open_session.total_cash_sales),
+            'digital': open_session.total_digital_sales,
+            'credit': q2(open_session.total_credit_extended),
+            'expected_cash': open_session.expected_cash,
+            'started': open_session.start_time,
+        }
+
     # --- 4. The Big Numbers (Today) ---
+    # NOTE: revenue/count and the item-level cost MUST be aggregated separately.
+    # Putting Sum('total_amount') and Sum('items__...') in one aggregate() joins
+    # the items table and multiplies the revenue by the number of lines per sale.
     todays_sales = sales_qs.aggregate(
         revenue=Sum('total_amount'),
+        refunded=Sum('refunded_amount'),
+        cost=Sum('total_cost'),
         transactions=Count('id'),
-        profit=Sum('items__total_price') - Sum('items__unit_cost')  # Simplified Gross Profit
     )
 
-    # Strictly format to 2 decimal places
-    revenue = Decimal(str(todays_sales['revenue'] or '0.00')).quantize(Decimal('0.01'))
-    profit = Decimal(str(todays_sales['profit'] or '0.00')).quantize(Decimal('0.01'))
+    revenue = q2(D(todays_sales['revenue'] or 0) - D(todays_sales['refunded'] or 0))
+    profit = q2(revenue - D(todays_sales['cost'] or 0))
     transactions = todays_sales['transactions'] or 0
+    average_basket = q2(revenue / transactions) if transactions else Decimal('0.00')
 
     # --- 5. Cash Flow (Money in Hand) ---
+    # Signed sums: change given and refunds paid out are negative rows, so this
+    # is the true net movement, not the gross takings.
     payments = payments_qs.aggregate(
         cash=Sum('amount', filter=Q(payment_method='CASH')),
-        digital=Sum('amount', filter=~Q(payment_method='CASH'))
+        digital=Sum('amount', filter=~Q(payment_method='CASH')),
     )
 
-    # Strictly format to 2 decimal places
-    cash_in_hand = Decimal(str(payments['cash'] or '0.00')).quantize(Decimal('0.01'))
-    digital_sales = Decimal(str(payments['digital'] or '0.00')).quantize(Decimal('0.01'))
+    cash_in_hand = q2(payments['cash'] or 0)
+    digital_sales = q2(payments['digital'] or 0)
 
-    # --- 6. Critical Alerts (Location-wide, not user specific) ---
-    low_stock_count = StockBatch.objects.filter(
-        location__in=analytics_scope,
-        quantity__lte=5
-    ).count()
+    credit_extended = q2(
+        sales_qs.aggregate(
+            owed=Sum(F('total_amount') - F('refunded_amount') - F('amount_paid'))
+        )['owed'] or 0
+    )
+
+    # --- 6. Stock health (location-wide, not user specific) ---
+    stock_alerts = _stock_alerts(analytics_scope)
 
     # --- 7. Chart Data (Last 7 Days) ---
     sales_data = historical_sales_qs.values('created_at__date').annotate(
@@ -155,13 +182,22 @@ def owner_analytics(request):
         'revenue': revenue,
         'transactions': transactions,
         'profit': profit,
+        'average_basket': average_basket,
 
         # Cash Flow
         'cash_in_hand': cash_in_hand,
         'digital_sales': digital_sales,
+        'credit_extended': credit_extended,
 
-        # Alerts
-        'low_stock_count': low_stock_count,
+        # Alerts (everyone on the floor needs these)
+        'low_stock_count': stock_alerts['low_count'],
+        'out_of_stock_count': stock_alerts['out_count'],
+        'low_stock_items': stock_alerts['low_items'],
+        'stock_value': stock_alerts['stock_value'] if is_admin_role else None,
+
+        # My open shift
+        'open_session': open_session,
+        'session_stats': session_stats,
 
         # Charts
         'chart_labels': chart_labels,
@@ -169,3 +205,38 @@ def owner_analytics(request):
     }
 
     return render(request, 'dashboard/analytics.html', context)
+
+
+def _stock_alerts(location_scope, limit=12):
+    """
+    What is running out. Every role sees this -- a salesperson who does not
+    know a part is down to its last two pieces cannot do their job.
+    """
+    stock = Product.objects.filter(is_active=True).annotate(
+        pieces=Coalesce(
+            Sum('batches__quantity', filter=Q(batches__location__in=location_scope)),
+            Value(0),
+        )
+    )
+
+    low_items = list(
+        stock.filter(pieces__gt=0, pieces__lte=F('low_stock_threshold'))
+        .select_related('category')
+        .order_by('pieces', 'name')[:limit]
+    )
+
+    low_count = stock.filter(pieces__gt=0, pieces__lte=F('low_stock_threshold')).count()
+    out_count = stock.filter(pieces__lte=0).count()
+
+    value = StockBatch.objects.filter(
+        location__in=location_scope, quantity__gt=0
+    ).aggregate(
+        total=Sum(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=18, decimal_places=2))
+    )['total']
+
+    return {
+        'low_items': low_items,
+        'low_count': low_count,
+        'out_count': out_count,
+        'stock_value': q2(value or 0),
+    }

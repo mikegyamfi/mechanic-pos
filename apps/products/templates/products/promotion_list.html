@@ -1,0 +1,130 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Promotions | Abossey Okai Hub{% endblock %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-1">Promotions</h5>
+            <small class="text-muted">
+                A cashier can never price below cost + the shop's minimum margin.
+                A promotion is the only thing that lowers that floor — and only to the
+                promotional price, never below it.
+            </small>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            {% if running_count %}
+            <span class="badge bg-label-success">{{ running_count }} running now</span>
+            {% endif %}
+            <a href="{% url 'products:promotion_create' %}" class="btn btn-primary">
+                <i class="ri-add-line me-1"></i> New promotion
+            </a>
+        </div>
+    </div>
+
+    <div class="card-body p-0">
+        {% if promotions %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Promotion</th>
+                        <th>Discount</th>
+                        <th>Covers</th>
+                        <th>Where</th>
+                        <th>Window</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for promo in promotions %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'products:promotion_edit' promo.pk %}" class="fw-bold text-dark">
+                                {{ promo.name }}
+                            </a>
+                            {% if promo.allow_below_cost %}
+                            <span class="badge bg-label-danger ms-1" title="Authorised to sell below landed cost">
+                                LOSS-LEADER
+                            </span>
+                            {% endif %}
+                            {% if promo.description %}
+                            <div class="small text-muted">{{ promo.description|truncatechars:70 }}</div>
+                            {% endif %}
+                            <div class="small text-muted">
+                                Set up by {{ promo.created_by.username|default:"—" }}
+                            </div>
+                        </td>
+                        <td><span class="badge bg-label-primary">{{ promo.discount_label }}</span></td>
+                        <td>
+                            {% if promo.applies_to_all %}
+                                <span class="fw-semibold text-warning">Entire catalogue</span>
+                            {% else %}
+                                {% with product_count=promo.products.count category_count=promo.categories.count %}
+                                {% if product_count %}<div>{{ product_count }} part{{ product_count|pluralize }}</div>{% endif %}
+                                {% if category_count %}
+                                <div class="small text-muted">
+                                    {% for category in promo.categories.all %}{{ category.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                                </div>
+                                {% endif %}
+                                {% endwith %}
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if promo.locations.exists %}
+                                {% for location in promo.locations.all %}
+                                <span class="badge bg-label-secondary">{{ location.name }}</span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted small">All shops</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="small">From {{ promo.starts_at|date:"d M Y H:i" }}</div>
+                            <div class="small text-muted">
+                                {% if promo.ends_at %}Until {{ promo.ends_at|date:"d M Y H:i" }}{% else %}No end date{% endif %}
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            {% if promo.status_label == 'RUNNING' %}
+                                <span class="badge bg-success">RUNNING</span>
+                            {% elif promo.status_label == 'SCHEDULED' %}
+                                <span class="badge bg-info">SCHEDULED</span>
+                            {% elif promo.status_label == 'EXPIRED' %}
+                                <span class="badge bg-label-secondary">EXPIRED</span>
+                            {% else %}
+                                <span class="badge bg-label-danger">OFF</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'products:promotion_edit' promo.pk %}" class="btn btn-sm btn-outline-primary">
+                                Edit
+                            </a>
+                            <form method="post" action="{% url 'products:promotion_toggle' promo.pk %}" class="d-inline">
+                                {% csrf_token %}
+                                <button class="btn btn-sm {% if promo.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %}">
+                                    {% if promo.is_active %}Switch off{% else %}Switch on{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="ri-price-tag-3-line ri-3x text-muted mb-2 d-block"></i>
+            <h6 class="fw-bold text-muted">No promotions yet</h6>
+            <small class="text-muted d-block mb-3">
+                Until one exists, no part can be sold below cost + your minimum margin.
+            </small>
+            <a href="{% url 'products:promotion_create' %}" class="btn btn-primary">Create the first one</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

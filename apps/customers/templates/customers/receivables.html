@@ -1,0 +1,154 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Money Owed to You | Abossey Okai Hub{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card h-100 border-start border-danger border-4">
+            <div class="card-body py-3">
+                <small class="text-muted text-uppercase fw-bold" style="font-size:.65rem;">Total owed to you</small>
+                <h3 class="mb-0 fw-bolder text-danger">₵{{ grand_total|floatformat:2|intcomma }}</h3>
+                <small class="text-muted">across {{ invoice_count }} unpaid invoice{{ invoice_count|pluralize }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 border-start border-primary border-4">
+            <div class="card-body py-3">
+                <small class="text-muted text-uppercase fw-bold" style="font-size:.65rem;">Mechanics with debt</small>
+                <h3 class="mb-0 fw-bolder">{{ debtors|length }}</h3>
+                <small class="text-muted">oldest debt first below</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100 border-start border-warning border-4">
+            <div class="card-body py-3">
+                <small class="text-muted text-uppercase fw-bold" style="font-size:.65rem;">Over their credit limit</small>
+                <h3 class="mb-0 fw-bolder {% if over_limit_count %}text-warning{% endif %}">{{ over_limit_count }}</h3>
+                <small class="text-muted">no further credit until they pay</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h5 class="mb-1">Money owed to you</h5>
+            <small class="text-muted">
+                A mechanic can pay part now and the rest later — record each payment against the
+                specific invoice, and it lands in whoever's drawer is open at that moment.
+            </small>
+        </div>
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="q" class="form-control" style="width: 240px;"
+                   placeholder="Name, workshop, phone or invoice" value="{{ query }}">
+            <button class="btn btn-outline-primary">Search</button>
+        </form>
+    </div>
+
+    <div class="card-body p-0">
+        {% if debtors %}
+        <div class="accordion accordion-flush" id="debtors">
+            {% for row in debtors %}
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#debtor-{{ row.customer.pk }}">
+                        <div class="d-flex justify-content-between align-items-center w-100 pe-3 flex-wrap gap-2">
+                            <div>
+                                <span class="fw-bold text-dark">{{ row.customer.display_name }}</span>
+                                <span class="text-muted small ms-2">{{ row.customer.phone_number }}</span>
+                                {% if row.total > row.customer.credit_limit %}
+                                <span class="badge bg-label-warning ms-2">OVER LIMIT</span>
+                                {% endif %}
+                                {% if row.oldest_days > 30 %}
+                                <span class="badge bg-label-danger ms-1">{{ row.oldest_days }} days old</span>
+                                {% elif row.oldest_days > 7 %}
+                                <span class="badge bg-label-warning ms-1">{{ row.oldest_days }} days old</span>
+                                {% endif %}
+                            </div>
+                            <div class="d-flex gap-4 align-items-center">
+                                <div class="text-end">
+                                    <small class="text-muted d-block" style="font-size:.65rem;">LIMIT</small>
+                                    <span class="fw-semibold">₵{{ row.customer.credit_limit|floatformat:2|intcomma }}</span>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-muted d-block" style="font-size:.65rem;">OWES</small>
+                                    <span class="fw-bolder fs-5 text-danger">₵{{ row.total|floatformat:2|intcomma }}</span>
+                                </div>
+                                <span class="badge bg-label-secondary">
+                                    {{ row.invoices|length }} invoice{{ row.invoices|length|pluralize }}
+                                </span>
+                            </div>
+                        </div>
+                    </button>
+                </h2>
+                <div id="debtor-{{ row.customer.pk }}" class="accordion-collapse collapse" data-bs-parent="#debtors">
+                    <div class="accordion-body pt-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-3">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Invoice</th>
+                                        <th>Age</th>
+                                        <th class="text-end">Bill</th>
+                                        <th class="text-end">Paid so far</th>
+                                        <th class="text-end">Still owing</th>
+                                        <th class="text-end">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for sale in row.invoices %}
+                                    <tr>
+                                        <td>{{ sale.created_at|date:"d M Y" }}</td>
+                                        <td>
+                                            <a href="{% url 'sales:detail' sale.pk %}" class="fw-semibold">
+                                                {{ sale.invoice_number }}
+                                            </a>
+                                        </td>
+                                        <td><small class="text-muted">{{ sale.created_at|timesince }}</small></td>
+                                        <td class="text-end">{{ sale.total_amount|floatformat:2|intcomma }}</td>
+                                        <td class="text-end text-success">{{ sale.amount_paid|floatformat:2|intcomma }}</td>
+                                        <td class="text-end fw-bold text-danger">{{ sale.outstanding|floatformat:2|intcomma }}</td>
+                                        <td class="text-end">
+                                            <a href="{% url 'sales:detail' sale.pk %}"
+                                               class="btn btn-sm btn-outline-danger fw-bold">
+                                                <i class="ri-hand-coin-line"></i> Take payment
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'customers:statement' row.customer.pk %}" class="btn btn-sm btn-primary">
+                                <i class="ri-printer-line me-1"></i> Print statement
+                            </a>
+                            <a href="{% url 'customers:detail' row.customer.pk %}" class="btn btn-sm btn-outline-secondary">
+                                View account
+                            </a>
+                            <a href="{% url 'customers:edit' row.customer.pk %}" class="btn btn-sm btn-outline-secondary">
+                                Adjust credit limit
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="ri-check-double-line ri-3x text-success mb-2 d-block"></i>
+            <h6 class="fw-bold text-muted">Nobody owes you anything</h6>
+            <small class="text-muted">Every invoice is fully settled.</small>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

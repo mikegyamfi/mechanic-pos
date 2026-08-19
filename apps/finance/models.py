@@ -72,6 +72,11 @@ class Expense(TimeStampedModel):
     # Context
     date_incurred = models.DateField(db_index=True)
     is_paid_from_till = models.BooleanField(default=True, help_text="Was this taken from the Cashier's active drawer?")
+    # Which drawer the cash actually left. Without this link, a till expense
+    # silently turns into a cash shortage at close-of-shift.
+    register_session = models.ForeignKey('sales.RegisterSession', on_delete=models.SET_NULL, null=True, blank=True,
+                                         related_name='expenses',
+                                         help_text="The open drawer this cash came out of")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
 
     def __str__(self):

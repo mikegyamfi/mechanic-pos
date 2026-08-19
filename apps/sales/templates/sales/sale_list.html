@@ -62,6 +62,24 @@
         </form>
     </div>
 
+    <!-- Totals for whatever filter is active -->
+    <div class="row g-0 border-bottom">
+        <div class="col-md-4 p-3 border-end">
+            <small class="text-muted text-uppercase fw-bold d-block" style="font-size:.65rem;">Revenue (net of refunds)</small>
+            <h5 class="mb-0 fw-bold">₵{{ summary.revenue|floatformat:2|intcomma }}</h5>
+        </div>
+        <div class="col-md-4 p-3 border-end">
+            <small class="text-muted text-uppercase fw-bold d-block" style="font-size:.65rem;">Collected</small>
+            <h5 class="mb-0 fw-bold text-success">₵{{ summary.paid|floatformat:2|intcomma }}</h5>
+        </div>
+        <div class="col-md-4 p-3">
+            <small class="text-muted text-uppercase fw-bold d-block" style="font-size:.65rem;">Still outstanding</small>
+            <h5 class="mb-0 fw-bold {% if summary.outstanding > 0 %}text-danger{% endif %}">
+                ₵{{ summary.outstanding|floatformat:2|intcomma }}
+            </h5>
+        </div>
+    </div>
+
     <div class="table-responsive text-nowrap">
         <table class="table table-hover">
             <thead>
@@ -111,9 +129,18 @@
                     </td>
                     <td>
                         <div class="d-flex flex-column">
-                            <span class="fw-bold">{{ sale.total_amount|intcomma }}</span>
+                            <span class="fw-bold">{{ sale.total_amount|floatformat:2|intcomma }}</span>
+                            {% if sale.refunded_amount > 0 %}
+                                <small class="text-danger">−{{ sale.refunded_amount|floatformat:2|intcomma }} refunded</small>
+                            {% endif %}
                             {% if sale.balance_remaining > 0 %}
-                                <span class="badge bg-danger rounded-pill">Due: {{ sale.balance_remaining|intcomma }}</span>
+                                <span class="badge bg-danger rounded-pill">Due: {{ sale.balance_remaining|floatformat:2|intcomma }}</span>
+                            {% endif %}
+                            {% if show_profit and sale.total_cost %}
+                                <small class="text-muted">profit {{ sale.gross_profit|floatformat:2|intcomma }}</small>
+                            {% endif %}
+                            {% if sale.has_price_override %}
+                                <small class="text-warning fw-bold"><i class="ri-alert-line"></i> override</small>
                             {% endif %}
                         </div>
                     </td>
@@ -153,8 +180,8 @@
                                 {% endif %}
 
                                 {% if user.role == 'MANAGER' or user.role == 'OWNER' %}
-                                <a class="dropdown-item" href="#">
-                                    <i class="ri-refund-2-line me-1"></i> Refund
+                                <a class="dropdown-item" href="{% url 'sales:refund' sale.pk %}">
+                                    <i class="ri-refund-2-line me-1"></i> Refund / Return
                                 </a>
                                 {% endif %}
                             </div>
@@ -174,5 +201,35 @@
             </tbody>
         </table>
     </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <small class="text-muted fw-semibold">
+            Showing {{ page_obj.start_index }}–{{ page_obj.end_index }} of
+            {{ page_obj.paginator.count }} transactions
+        </small>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+                <li class="page-item active">
+                    <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                </li>
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

@@ -59,21 +59,54 @@
                             <div class="row g-3">
                                 <div class="col-md-4">
                                     {{ form.cost_price|as_crispy_field }}
+                                    <small class="text-muted">Auto-synced to the weighted average of the batches on hand.</small>
                                 </div>
                                 <div class="col-md-4">
                                     {{ form.selling_price|as_crispy_field }}
-                                    <small class="text-muted">Standard price (or Pair price).</small>
+                                    <small class="text-muted">For a paired part this is the <strong>pair</strong> price.</small>
                                 </div>
                                 <div class="col-md-4">
                                     {{ form.wholesale_price|as_crispy_field }}
                                 </div>
                                 <div class="col-md-4">
-                                    {{ form.single_piece_price|as_crispy_field }}
-                                    <small class="text-info fw-bold">If breaking a pair (Optional).</small>
-                                </div>
-                                <div class="col-md-4">
                                     {{ form.tax_rate|as_crispy_field }}
                                     <small class="text-muted">Specific sales tax % for this item.</small>
+                                </div>
+                                <div class="col-md-4">
+                                    {{ form.min_margin_percentage|as_crispy_field }}
+                                    <small class="text-muted">Blank = use the shop's floor.</small>
+                                </div>
+                            </div>
+
+                            <!-- ============ SPLIT (BROKEN PAIR) PRICING ============ -->
+                            <div class="card border mt-4 mb-2" id="split-pricing-card">
+                                <div class="card-header bg-label-primary py-2 d-flex align-items-center">
+                                    <i class="ri-checkbox-multiple-line me-2"></i>
+                                    <strong>Breaking the pair</strong>
+                                </div>
+                                <div class="card-body pt-3">
+                                    <p class="text-muted small mb-3">
+                                        Stock is always counted in <strong>pieces</strong>. When a customer wants
+                                        one side only, this rule decides what that single piece costs.
+                                        On the percentage rule the single price follows the pair price
+                                        automatically — change the pair price anywhere and this updates itself.
+                                    </p>
+
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            {{ form.split_price_mode|as_crispy_field }}
+                                        </div>
+                                        <div class="col-md-4" id="percent-wrap">
+                                            {{ form.split_price_percentage|as_crispy_field }}
+                                        </div>
+                                        <div class="col-md-4" id="fixed-wrap">
+                                            {{ form.single_piece_price|as_crispy_field }}
+                                        </div>
+                                    </div>
+
+                                    <div class="alert alert-primary mb-0 mt-3 py-2" id="split-preview">
+                                        <span class="fw-bold">Preview:</span> <span id="split-preview-text">—</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -105,7 +138,10 @@
                                 <div class="form-check form-switch mt-3">
                                     {{ form.is_sold_in_pairs }}
                                     <label class="form-check-label fw-bold text-primary" for="{{ form.is_sold_in_pairs.id_for_label }}">Sold in Pairs (Headlights, Shocks)</label>
-                                    <div class="form-text">System will multiply imported box quantity by 2.</div>
+                                    <div class="form-text">
+                                        Selling price becomes the <strong>pair</strong> price and the split rule
+                                        below decides what one side costs.
+                                    </div>
                                 </div>
 
                                 <div class="form-check form-switch mt-3">
@@ -140,4 +176,67 @@
     </div>
   </div>
 </div>
+
+<script>
+// Split-pricing UI: show only the field that the chosen rule actually uses,
+// and spell out the resulting price so nobody has to do the maths in their head.
+(function () {
+    const pairToggle = document.getElementById('{{ form.is_sold_in_pairs.id_for_label }}');
+    const modeField = document.getElementById('{{ form.split_price_mode.id_for_label }}');
+    const percentField = document.getElementById('{{ form.split_price_percentage.id_for_label }}');
+    const fixedField = document.getElementById('{{ form.single_piece_price.id_for_label }}');
+    const sellingField = document.getElementById('{{ form.selling_price.id_for_label }}');
+    const costField = document.getElementById('{{ form.cost_price.id_for_label }}');
+
+    const card = document.getElementById('split-pricing-card');
+    const percentWrap = document.getElementById('percent-wrap');
+    const fixedWrap = document.getElementById('fixed-wrap');
+    const previewText = document.getElementById('split-preview-text');
+
+    const fmt = (v) => Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    function refresh() {
+        const isPair = pairToggle && pairToggle.checked;
+        card.style.display = isPair ? '' : 'none';
+        if (!isPair) return;
+
+        const mode = modeField.value;
+        percentWrap.style.display = mode === 'PERCENT' ? '' : 'none';
+        fixedWrap.style.display = mode === 'FIXED' ? '' : 'none';
+
+        const pairPrice = parseFloat(sellingField.value) || 0;
+        const cost = parseFloat(costField.value) || 0;
+        const percentage = parseFloat(percentField.value) || 0;
+        const single = mode === 'PERCENT'
+            ? pairPrice * percentage / 100
+            : (parseFloat(fixedField.value) || 0);
+
+        let text = `Pair sells for <strong>₵${fmt(pairPrice)}</strong>. `
+                 + `One side sells for <strong>₵${fmt(single)}</strong>`;
+        if (mode === 'PERCENT') {
+            text += ` (${percentage}% of the pair price — recalculated automatically).`;
+        } else {
+            text += ` (fixed — will NOT move if the pair price changes).`;
+        }
+        if (cost > 0) {
+            const pairMargin = pairPrice > 0 ? ((pairPrice - cost * 2) / pairPrice * 100) : 0;
+            const singleMargin = single > 0 ? ((single - cost) / single * 100) : 0;
+            text += `<br>Landed cost is ₵${fmt(cost)} per piece, so a pair costs you ₵${fmt(cost * 2)}. `
+                  + `Margin: <strong>${fmt(pairMargin)}%</strong> on a pair, `
+                  + `<strong>${fmt(singleMargin)}%</strong> on a single.`;
+            if (single * 2 < pairPrice) {
+                text += `<br><span class="text-warning fw-bold">Note: two singles (₵${fmt(single * 2)}) `
+                      + `come to less than one pair (₵${fmt(pairPrice)}).</span>`;
+            }
+        }
+        previewText.innerHTML = text;
+    }
+
+    [pairToggle, modeField, percentField, fixedField, sellingField, costField]
+        .filter(Boolean)
+        .forEach(el => { el.addEventListener('input', refresh); el.addEventListener('change', refresh); });
+
+    refresh();
+})();
+</script>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static humanize %}
 
-{% block title %}POS Terminal | Retail POS{% endblock %}
+{% block title %}POS Terminal | Abossey Okai Hub{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -13,305 +13,366 @@
     .layout-navbar, .content-footer, .content-backdrop { display: none !important; }
     .container-xxl { padding: 0 !important; margin: 0 !important; max-width: 100% !important; width: 100% !important; height: 100% !important; flex: 1; display: flex; flex-direction: column; }
 
-    /* --- Custom Scrollbar for POS --- */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #d9dee3; border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: #bacad6; }
 
-    /* --- 2. POS MAIN CONTAINER --- */
+    /* --- 2. POS SHELL --- */
     .pos-layout { display: flex; flex: 1; width: 100%; height: 100%; overflow: hidden; }
+    .pos-catalog { flex: 1; display: flex; flex-direction: column; padding: 1rem 1.25rem; height: 100%; min-width: 0; }
 
-    /* --- 3. CATALOG SECTION --- */
-    .pos-catalog { flex: 1; display: flex; flex-direction: column; padding: 1.5rem; height: 100%; }
-
-    /* Sleek Search Bar */
-    .catalog-controls .input-group {
-        border: 1px solid #e4e6e8;
-        border-radius: 50px;
-        background: #fff;
-        overflow: hidden;
-        transition: all 0.2s ease;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    /* --- 3. SHIFT STRIP --- */
+    .shift-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .shift-chip {
+        background: #fff; border: 1px solid #e4e6e8; border-radius: 10px;
+        padding: 0.35rem 0.75rem; line-height: 1.15; min-width: 104px;
     }
-    .catalog-controls .input-group:focus-within {
-        border-color: #696cff;
-        box-shadow: 0 0 0 4px rgba(105, 108, 255, 0.1);
+    .shift-chip .label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.5px; color: #a1acb8; font-weight: 700; }
+    .shift-chip .value { font-size: 1rem; font-weight: 800; color: #2b2c40; }
+
+    /* --- 4. FILTER BAR --- */
+    .filter-bar { background: #fff; border: 1px solid #e4e6e8; border-radius: 12px; padding: 0.6rem; }
+    .filter-bar .form-control, .filter-bar .form-select { border-color: #e4e6e8; }
+    #product-search { height: 46px; font-size: 1.05rem; font-weight: 500; }
+    .search-wrap { position: relative; flex: 1; min-width: 240px; }
+    .search-wrap .ri-search-2-line { position: absolute; left: 14px; top: 13px; color: #696cff; font-size: 1.15rem; }
+    .search-wrap input { padding-left: 42px; }
+    .search-wrap .spinner-border { position: absolute; right: 14px; top: 15px; }
+
+    /* --- 5. CATALOGUE TABLE --- */
+    .table-scroll { flex: 1; overflow: auto; background: #fff; border: 1px solid #e4e6e8; border-radius: 12px; }
+    table.pos-table { width: 100%; margin: 0; border-collapse: separate; border-spacing: 0; font-size: 0.875rem; }
+    table.pos-table thead th {
+        position: sticky; top: 0; z-index: 5; background: #f8f9fb; color: #67707c;
+        font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;
+        padding: 0.7rem 0.75rem; border-bottom: 1px solid #e4e6e8; white-space: nowrap;
     }
-    .catalog-controls input { border: none; height: 50px; font-size: 1.1rem; padding-left: 0.5rem; background: transparent; box-shadow: none !important; }
-    .catalog-controls .input-group-text { border: none; background: transparent; color: #696cff; padding-left: 1.5rem; }
-
-    /* Category Pills */
-    .category-scroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 1rem; }
-    .cat-pill {
-        white-space: nowrap; padding: 0.5rem 1.2rem; border-radius: 50px;
-        background: #fff; border: 1px solid #e4e6e8; color: #566a7f;
-        font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+    table.pos-table tbody td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f2f3f5; vertical-align: middle; }
+    table.pos-table tbody tr { transition: background 0.12s; }
+    table.pos-table tbody tr:hover { background: #f9f9ff; }
+    table.pos-table tbody tr.is-out { background: #fff8f7; }
+    table.pos-table tbody tr.is-out:hover { background: #fff1ef; }
+    .part-name { font-weight: 700; color: #2b2c40; font-size: 0.93rem; }
+    .part-meta { font-size: 0.73rem; color: #a1acb8; font-weight: 600; }
+    .price-main { font-weight: 800; color: #696cff; font-size: 0.98rem; white-space: nowrap; }
+    .price-sub { font-size: 0.72rem; color: #8592a3; font-weight: 600; white-space: nowrap; }
+    .stock-pill {
+        display: inline-flex; align-items: center; gap: 4px; font-weight: 800; font-size: 0.8rem;
+        padding: 3px 9px; border-radius: 7px; cursor: pointer; border: 1px solid transparent;
     }
-    .cat-pill:hover { background: #f8f9fa; border-color: #d9dee3; }
-    .cat-pill.active { background: #696cff; color: white; border-color: #696cff; box-shadow: 0 4px 10px rgba(105, 108, 255, 0.24); }
+    .stock-ok { background: #e8fadf; color: #4b8b25; }
+    .stock-low { background: #fff2d6; color: #a97400; }
+    .stock-none { background: #ffe4e0; color: #d13c1c; }
+    .stock-pill:hover { border-color: currentColor; }
+    .tag { font-size: 0.62rem; font-weight: 800; padding: 2px 6px; border-radius: 5px; text-transform: uppercase; }
+    .tag-pair { background: #e7e7ff; color: #5f61e6; }
+    .tag-shelf { background: #f1f2f4; color: #67707c; }
+    .tag-promo { background: #ffe4e0; color: #d13c1c; }
+    .btn-add { font-weight: 800; font-size: 0.75rem; padding: 0.3rem 0.7rem; border-radius: 8px; white-space: nowrap; }
 
-    /* Product Grid */
-    .product-grid-wrapper { flex: 1; overflow-y: auto; padding-right: 5px; padding-top: 5px; }
-    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1.2rem; padding-bottom: 3rem; }
-
-    .product-card {
-        background: #fff; border-radius: 16px; padding: 1.2rem; cursor: pointer;
-        border: 1px solid #e4e6e8; display: flex; flex-direction: column; justify-content: space-between;
-        height: 150px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); transition: all 0.2s ease; position: relative;
+    /* --- 6. CART --- */
+    .pos-cart {
+        width: 520px; min-width: 460px; background: #fff; display: flex; flex-direction: column;
+        height: 100%; border-left: 1px solid #e4e6e8; z-index: 50; box-shadow: -4px 0 24px rgba(0,0,0,0.04);
     }
-    .product-card:hover { border-color: #696cff; transform: translateY(-4px); box-shadow: 0 8px 20px rgba(105, 108, 255, 0.12); }
-    .product-card:active { transform: scale(0.96); }
-
-    /* --- 4. CART SECTION --- */
-    .pos-cart { width: 450px; background: #fff; display: flex; flex-direction: column; height: 100%; border-left: 1px solid #e4e6e8; z-index: 50; box-shadow: -4px 0 24px rgba(0,0,0,0.04); }
-
-    .cart-header { padding: 1.5rem 1.5rem 1rem 1.5rem; background: #fff; border-bottom: 1px solid #f0f2f4; }
-
-    /* Sleek Customer Selector */
+    .cart-header { padding: 1rem 1.25rem 0.85rem; border-bottom: 1px solid #f0f2f4; }
     .customer-selector {
-        background: #f8f9fa; border: 1px solid #e4e6e8; border-radius: 12px; padding: 0.8rem 1rem;
+        background: #f8f9fa; border: 1px solid #e4e6e8; border-radius: 12px; padding: 0.65rem 0.9rem;
         cursor: pointer; transition: all 0.2s ease; display: flex; justify-content: space-between; align-items: center;
     }
-    .customer-selector:hover { background: #fdfdfe; border-color: #696cff; box-shadow: 0 4px 12px rgba(105, 108, 255, 0.08); }
-
+    .customer-selector:hover { background: #fdfdfe; border-color: #696cff; }
     .cart-items-wrapper { flex: 1; overflow-y: auto; background-color: #fcfdfe; }
 
-    .cart-item { background: #fff; padding: 1rem 1.5rem; border-bottom: 1px solid #f0f2f4; display: flex; justify-content: space-between; align-items: center; transition: background 0.1s; }
-    .cart-item:hover { background: #f8f9fa; }
+    .cart-line { background: #fff; padding: 0.8rem 1.25rem; border-bottom: 1px solid #f0f2f4; }
+    .cart-line:hover { background: #fbfbff; }
+    .cart-line.over-stock { background: #fff6f5; box-shadow: inset 3px 0 0 #ff3e1d; }
+    .cart-line.promo-line { box-shadow: inset 3px 0 0 #ff3e1d; }
 
-    /* Modern Quantity Control */
-    .qty-control { display: flex; align-items: center; background: #f0f2f4; border-radius: 50px; padding: 4px; }
+    .qty-control { display: flex; align-items: center; background: #f0f2f4; border-radius: 50px; padding: 3px; }
     .qty-btn {
-        width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
         cursor: pointer; font-weight: bold; color: #566a7f; background: #fff; border-radius: 50%;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.1s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     }
-    .qty-btn:hover { color: #696cff; transform: scale(1.05); }
-    .qty-btn:active { transform: scale(0.95); }
-    .qty-val { width: 35px; text-align: center; font-weight: 700; font-size: 0.95rem; color: #333; }
+    .qty-btn:hover { color: #696cff; }
+    .qty-val { width: 34px; text-align: center; font-weight: 800; font-size: 0.9rem; }
 
-    .cart-footer { padding: 1.5rem; background: #fff; border-top: 1px solid #e4e6e8; box-shadow: 0 -4px 20px rgba(0,0,0,0.03); }
+    .mode-switch { display: inline-flex; background: #f0f2f4; border-radius: 7px; padding: 2px; }
+    .mode-opt {
+        font-size: 0.65rem; font-weight: 800; padding: 3px 9px; border-radius: 5px;
+        cursor: pointer; color: #8592a3; text-transform: uppercase;
+    }
+    .mode-opt.active { background: #fff; color: #5f61e6; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 
-    /* Gradient Total Display */
+    .price-chip {
+        background: #f0f2f4; color: #566a7f; border-radius: 8px; padding: 3px 9px;
+        font-size: 0.85rem; font-weight: 800; cursor: pointer; border: 1px solid transparent;
+        display: inline-flex; align-items: center; gap: 5px;
+    }
+    .price-chip:hover { background: #e7e7ff; color: #696cff; border-color: #c3c4ff; }
+    .price-chip.haggled { background: #d7f5fc; color: #0a8fa8; }
+    .price-chip.below { background: #ffe4e0; color: #d13c1c; }
+
+    .cart-footer { padding: 1rem 1.25rem; border-top: 1px solid #e4e6e8; box-shadow: 0 -4px 20px rgba(0,0,0,0.03); }
     .total-display {
-        background: linear-gradient(135deg, #696cff 0%, #5254cf 100%);
-        color: white; padding: 1.2rem 1.5rem; border-radius: 16px;
-        display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem;
-        box-shadow: 0 8px 20px rgba(105, 108, 255, 0.25);
+        background: linear-gradient(135deg, #696cff 0%, #5254cf 100%); color: white;
+        padding: 0.9rem 1.15rem; border-radius: 14px; display: flex; justify-content: space-between;
+        align-items: center; margin-bottom: 0.85rem; box-shadow: 0 8px 20px rgba(105, 108, 255, 0.25);
     }
-
     .pay-btn {
-        width: 100%; padding: 1.2rem; font-size: 1.2rem; font-weight: 800;
-        text-transform: uppercase; border-radius: 16px; letter-spacing: 1px;
-        background-color: #71dd37; border: none; box-shadow: 0 6px 16px rgba(113, 221, 55, 0.3);
-        transition: all 0.2s ease;
+        width: 100%; padding: 0.95rem; font-size: 1.1rem; font-weight: 800; text-transform: uppercase;
+        border-radius: 14px; letter-spacing: 0.5px; background-color: #71dd37; border: none;
+        box-shadow: 0 6px 16px rgba(113, 221, 55, 0.3); transition: all 0.2s ease;
     }
-    .pay-btn:hover { background-color: #66c732; transform: translateY(-2px); box-shadow: 0 8px 20px rgba(113, 221, 55, 0.4); }
-    .pay-btn:active { transform: translateY(0); }
+    .pay-btn:hover:not(:disabled) { background-color: #66c732; transform: translateY(-2px); }
+    .pay-btn:disabled { background-color: #c9d0d6; box-shadow: none; }
 
-    .cursor-pointer { cursor: pointer; }
-
-    /* Soft Badges for Cart */
-    .cart-badge {
-        font-size: 0.65rem; padding: 4px 8px; border-radius: 6px; margin-left: 6px;
-        text-transform: uppercase; font-weight: 700; cursor: pointer;
-        display: inline-flex; align-items: center; gap: 4px; transition: 0.2s;
-    }
-    .bg-retail { background: #e7e7ff; color: #696cff; }
-    .bg-wholesale { background: #fff2d6; color: #ffab00; }
-    .bg-custom { background: #d7f5fc; color: #03c3ec; }
-    .bg-pair { background: #e1e2e6; color: #2b2c40; }
-    .bg-single { background: #ffe4e0; color: #ff3e1d; }
-
-    /* Action Buttons (Haggle) */
-    .action-btn-soft {
-        background: #f0f2f4; color: #566a7f; border-radius: 8px; padding: 4px 10px;
-        font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;
-        transition: 0.2s; cursor: pointer; border: 1px solid transparent;
-    }
-    .action-btn-soft:hover { background: #e7e7ff; color: #696cff; border-color: #c3c4ff; }
-
-    /* --- RECEIPT STYLES --- */
+    /* --- RECEIPT --- */
     .print-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
     .print-divider { border-bottom: 1px dashed #000; margin: 5px 0; }
     .print-center { text-align: center; }
     .print-bold { font-weight: bold; }
+    .print-lg { font-size: 14px; }
+
+    @media (max-width: 1400px) { .pos-cart { width: 430px; min-width: 400px; } }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="pos-layout">
 
-    <!-- LEFT PANEL: CATALOG -->
+    <!-- ================= LEFT: CATALOGUE ================= -->
     <div class="pos-catalog">
-        <!-- Header Actions -->
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-shrink-0">
-            <div class="d-flex gap-2">
-                <a href="{% url 'dashboard:index' %}" class="btn btn-label-secondary fw-semibold rounded-pill px-3">
+
+        <!-- Header: navigation + live shift money -->
+        <div class="d-flex justify-content-between align-items-start mb-3 flex-shrink-0 gap-3 flex-wrap">
+            <div class="d-flex gap-2 flex-shrink-0">
+                <a href="{% url 'dashboard:index' %}" class="btn btn-label-secondary btn-sm fw-bold rounded-pill px-3">
                     <i class="ri-home-smile-line me-1"></i> Dashboard
                 </a>
-                <a href="{% url 'sales:list' %}" class="btn btn-label-secondary fw-semibold rounded-pill px-3">
+                <a href="{% url 'sales:list' %}" class="btn btn-label-secondary btn-sm fw-bold rounded-pill px-3">
                     <i class="ri-history-line me-1"></i> History
                 </a>
+                <a href="{% url 'sales:close_register' %}" class="btn btn-label-danger btn-sm fw-bold rounded-pill px-3">
+                    <i class="ri-shut-down-line me-1"></i> Close Register
+                </a>
             </div>
-            <a href="{% url 'sales:close_register' %}" class="btn btn-label-danger fw-semibold rounded-pill px-3">
-                <i class="ri-shut-down-line me-1"></i> Close Register
-            </a>
-        </div>
 
-        <!-- Search Row -->
-        <div class="catalog-controls mb-4">
-            <div class="input-group">
-                <span class="input-group-text"><i class="ri-search-2-line ri-xl"></i></span>
-                <input type="text" class="form-control fw-medium" id="product-search" placeholder="Scan barcode or search spare part..." autocomplete="off" autofocus>
+            <div class="shift-strip" id="shift-strip">
+                <div class="shift-chip">
+                    <div class="label">My sales today</div>
+                    <div class="value" id="shift-revenue">₵{{ shift_stats.revenue|floatformat:2|intcomma }}</div>
+                </div>
+                <div class="shift-chip">
+                    <div class="label">Receipts</div>
+                    <div class="value" id="shift-transactions">{{ shift_stats.transactions }}</div>
+                </div>
+                <div class="shift-chip">
+                    <div class="label">Cash in drawer</div>
+                    <div class="value" id="shift-expected">₵{{ shift_stats.expected_cash|floatformat:2|intcomma }}</div>
+                </div>
+                <div class="shift-chip">
+                    <div class="label">MoMo / Card</div>
+                    <div class="value" id="shift-digital">₵{{ shift_stats.digital|floatformat:2|intcomma }}</div>
+                </div>
+                <div class="shift-chip">
+                    <div class="label">On credit</div>
+                    <div class="value text-danger" id="shift-credit">₵{{ shift_stats.credit|floatformat:2|intcomma }}</div>
+                </div>
             </div>
         </div>
 
-        <!-- Categories -->
-        <div class="category-scroll">
-            <div class="cat-pill active" onclick="filterCategory('all', this)">All Parts</div>
-            {% for category in categories %}
-            <div class="cat-pill" onclick="filterCategory('{{ category.id }}', this)">{{ category.name }}</div>
-            {% endfor %}
+        <!-- Filters: everything below is resolved on the server -->
+        <div class="filter-bar mb-3 flex-shrink-0">
+            <div class="d-flex gap-2 flex-wrap align-items-center">
+                <div class="search-wrap">
+                    <i class="ri-search-2-line"></i>
+                    <input type="text" class="form-control" id="product-search"
+                           placeholder="Search the whole catalogue — name, SKU, part number, brand or shelf…"
+                           autocomplete="off" autofocus>
+                    <div class="spinner-border spinner-border-sm text-primary d-none" id="search-spinner" role="status"></div>
+                </div>
+                <select class="form-select" id="filter-category" style="width: 170px;">
+                    <option value="">All categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+                <select class="form-select" id="filter-stock" style="width: 150px;">
+                    <option value="in">In stock only</option>
+                    <option value="all">Show everything</option>
+                    <option value="low">Low stock</option>
+                    <option value="out">Out of stock</option>
+                </select>
+                <select class="form-select" id="filter-sort" style="width: 160px;">
+                    <option value="name">Name A–Z</option>
+                    <option value="stock_asc">Stock: lowest first</option>
+                    <option value="stock_desc">Stock: highest first</option>
+                    <option value="price_asc">Price: low to high</option>
+                    <option value="price_desc">Price: high to low</option>
+                    <option value="newest">Newest first</option>
+                </select>
+                <select class="form-select" id="filter-per-page" style="width: 110px;">
+                    <option value="25">25 rows</option>
+                    <option value="50">50 rows</option>
+                    <option value="100">100 rows</option>
+                </select>
+            </div>
         </div>
 
-        <!-- Product Grid -->
-        <div class="product-grid-wrapper">
-            <div class="product-grid" id="product-grid">
-                {% for product in products %}
-                <div class="product-card"
-                     id="product-card-{{ product.id }}"
-                     data-name="{{ product.name|lower }}"
-                     data-sku="{{ product.sku|lower }}"
-                     data-barcode="{{ product.barcode|default:''|lower }}"
-                     data-category="{{ product.category.id }}"
-                     data-price-retail="{{ product.selling_price }}"
-                     data-price-wholesale="{{ product.wholesale_price|default:product.selling_price }}"
-                     data-cost-price="{{ product.cost_price }}"
-                     data-is-pair="{{ product.is_sold_in_pairs|yesno:'true,false' }}"
-                     data-price-single="{{ product.single_piece_price|default:0 }}"
-                     onclick="addToCart('{{ product.id }}', '{{ product.name|escapejs }}', '{{ product.sku }}')">
+        <!-- Catalogue table -->
+        <div class="table-scroll">
+            <table class="pos-table">
+                <thead>
+                    <tr>
+                        <th style="min-width: 240px;">Part</th>
+                        <th>Category</th>
+                        <th class="text-center">Stock here</th>
+                        <th class="text-end">Sell price</th>
+                        {% if is_manager %}<th class="text-end">Wholesale</th>{% endif %}
+                        {% if can_see_cost %}<th class="text-end">Cost / margin</th>{% endif %}
+                        <th class="text-end" style="min-width: 150px;">Add to sale</th>
+                    </tr>
+                </thead>
+                <tbody id="product-rows">
+                    <tr><td colspan="9" class="text-center py-5 text-muted">Loading catalogue…</td></tr>
+                </tbody>
+            </table>
+        </div>
 
-                    <div style="flex: 1; padding-top: 5px;">
-                        <h6 class="mb-1 text-dark fw-bold text-truncate" title="{{ product.name }}">{{ product.name }}</h6>
-                        <div class="d-flex align-items-center justify-content-between mt-1">
-                            <small class="text-muted fw-medium">{{ product.sku }}</small>
-                            {% if product.is_sold_in_pairs %}
-                                <span class="badge bg-dark bg-opacity-10 text-dark rounded-pill px-2 py-1" style="font-size: 0.65rem;">
-                                    <i class="ri-checkbox-multiple-line me-1"></i>PAIR
-                                </span>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-end mt-2 pt-2">
-                        <span class="fw-bolder text-primary fs-4" id="price-display-{{ product.id }}">
-                            {{ product.selling_price|intcomma }}
-                        </span>
-                    </div>
-                </div>
-                {% empty %}
-                <div class="col-12 text-center mt-5">
-                    <div class="p-5 bg-white rounded-4 shadow-sm border border-dashed">
-                        <i class="ri-inbox-line ri-4x text-muted mb-3"></i>
-                        <h5 class="fw-bold text-muted">No parts in inventory</h5>
-                        <a href="{% url 'products:product_create' %}" class="btn btn-primary mt-3 rounded-pill px-4">Add Spare Part</a>
-                    </div>
-                </div>
-                {% endfor %}
+        <!-- Pagination -->
+        <div class="d-flex justify-content-between align-items-center mt-2 flex-shrink-0">
+            <small class="text-muted fw-semibold" id="result-count">—</small>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-label-secondary rounded-pill px-3 fw-bold" id="prev-page" onclick="changePage(-1)">
+                    <i class="ri-arrow-left-s-line"></i> Prev
+                </button>
+                <small class="fw-bold text-dark" id="page-indicator">Page 1</small>
+                <button class="btn btn-sm btn-label-secondary rounded-pill px-3 fw-bold" id="next-page" onclick="changePage(1)">
+                    Next <i class="ri-arrow-right-s-line"></i>
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- RIGHT PANEL: CART -->
+    <!-- ================= RIGHT: CART ================= -->
     <div class="pos-cart">
         <div class="cart-header">
-            <div class="d-flex justify-content-between align-items-center mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
                 <h5 class="mb-0 fw-bold text-dark">Current Sale</h5>
-                <span class="badge bg-label-primary rounded-pill">Shift: {{ session.user.username }}</span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-label-primary rounded-pill">{{ location.name }}</span>
+                    <button class="btn btn-icon btn-sm btn-label-danger rounded-circle" onclick="clearCart()" title="Clear cart">
+                        <i class="ri-delete-bin-line"></i>
+                    </button>
+                </div>
             </div>
 
-            <!-- Sleek Customer Selector -->
             <div class="customer-selector" onclick="openCustomerModal()">
                 <div class="d-flex align-items-center">
                     <div class="avatar avatar-sm me-3">
                         <span class="avatar-initial rounded-circle bg-primary text-white"><i class="ri-user-smile-line"></i></span>
                     </div>
                     <div>
-                        <h6 class="mb-0 text-truncate fw-bold text-dark" style="max-width: 180px;" id="selected-customer-name">Walk-in Customer</h6>
-                        <small class="text-muted fw-medium" id="selected-customer-phone">No Credit Allowed</small>
+                        <h6 class="mb-0 text-truncate fw-bold text-dark" style="max-width: 260px;" id="selected-customer-name">Walk-in Customer</h6>
+                        <small class="text-muted fw-medium" id="selected-customer-phone">Cash sale — no credit allowed</small>
                     </div>
                 </div>
-                <div class="avatar avatar-xs">
-                    <span class="avatar-initial rounded-circle bg-label-secondary text-primary"><i class="ri-arrow-right-s-line"></i></span>
-                </div>
+                <i class="ri-arrow-right-s-line fs-4 text-primary"></i>
             </div>
         </div>
 
-        <div class="cart-items-wrapper" id="cart-container">
-            <!-- Empty State -->
-            <div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted">
-                <div class="bg-label-secondary p-4 rounded-circle mb-3"><i class="ri-shopping-cart-2-line ri-3x text-primary"></i></div>
-                <h5 class="fw-bold text-dark">Cart is empty</h5>
-                <small>Scan item or click part to begin</small>
-            </div>
-        </div>
+        <div class="cart-items-wrapper" id="cart-container"></div>
 
         <div class="cart-footer">
-            <!-- Sleek Wholesale Switch -->
-            <div class="d-flex justify-content-between align-items-center mb-3 px-2">
-                <label class="fw-bold text-muted" for="wholesale-mode-check">Wholesale Mode</label>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <label class="fw-bold text-muted mb-0 small text-uppercase" for="wholesale-mode-check">Wholesale pricing</label>
                 <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" id="wholesale-mode-check" onchange="toggleGlobalWholesale()" style="width: 2.5rem; height: 1.25rem;">
+                    <input class="form-check-input" type="checkbox" id="wholesale-mode-check"
+                           onchange="toggleGlobalWholesale()" style="width: 2.5rem; height: 1.25rem;">
                 </div>
+            </div>
+
+            <div class="d-flex justify-content-between small fw-semibold text-muted mb-1">
+                <span>Items</span><span id="cart-item-count">0 units · 0 pieces</span>
+            </div>
+            <div class="d-flex justify-content-between small fw-semibold text-muted mb-2" id="discount-row" style="display:none !important;">
+                <span>Off list price</span><span class="text-success" id="cart-discount">₵0.00</span>
             </div>
 
             <div class="total-display">
                 <div>
-                    <span class="fw-medium text-white-50 d-block mb-1 fs-6">TOTAL AMOUNT</span>
-                    <span class="fs-1 fw-bolder lh-1 text-white" id="cart-total">0.00</span>
+                    <span class="fw-medium text-white-50 d-block mb-1" style="font-size: 0.7rem; letter-spacing: 1px;">TOTAL AMOUNT</span>
+                    <span class="fs-2 fw-bolder lh-1 text-white" id="cart-total">0.00</span>
                 </div>
-                <div class="bg-white rounded-circle d-flex align-items-center justify-content-center" style="width: 48px; height: 48px; opacity: 0.2;">
-                    <i class="ri-wallet-3-fill ri-xl text-dark"></i>
-                </div>
+                <i class="ri-wallet-3-fill ri-2x text-white" style="opacity: 0.3;"></i>
             </div>
 
-            <button class="pay-btn text-white" onclick="openCheckoutModal()">
+            <button class="pay-btn text-white" id="charge-btn" onclick="openCheckoutModal()" disabled>
                 CHARGE CUSTOMER <i class="ri-arrow-right-line ms-2"></i>
             </button>
         </div>
     </div>
 </div>
 
-<!-- Modals remain identical structurally, just styling updates below -->
-<!-- Customer Modal -->
+<!-- ================= STOCK DETAIL MODAL ================= -->
+<div class="modal fade" id="stockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-0 pb-2">
+        <div>
+            <h5 class="modal-title fw-bold text-dark mb-0" id="stock-modal-title">Stock detail</h5>
+            <small class="text-muted fw-semibold" id="stock-modal-subtitle"></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body pt-0" id="stock-modal-body">
+        <div class="text-center py-5 text-muted">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CUSTOMER MODAL ================= -->
 <div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4">
       <div class="modal-header bg-transparent border-0 pb-0 pt-4 px-4">
-        <h4 class="modal-title fw-bold text-dark">Select Mechanic</h4>
+        <h4 class="modal-title fw-bold text-dark">Select Mechanic / Customer</h4>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4">
         <div id="customer-search-view">
-            <div class="input-group mb-4 rounded-pill border" style="overflow: hidden;">
+            <div class="input-group mb-3 rounded-pill border" style="overflow: hidden;">
                 <span class="input-group-text bg-white border-0"><i class="ri-search-line text-primary"></i></span>
-                <input type="text" class="form-control border-0 py-2 fw-medium shadow-none" id="customer-search-input" placeholder="Search by name or phone..." autocomplete="off">
+                <input type="text" class="form-control border-0 py-2 fw-medium shadow-none" id="customer-search-input"
+                       placeholder="Search by name, workshop or phone…" autocomplete="off">
             </div>
-            <div class="list-group list-group-flush border-top border-bottom" id="customer-results-list" style="max-height: 300px; overflow-y: auto;">
-                <button class="list-group-item list-group-item-action py-3 px-2 d-flex justify-content-between align-items-center border-0 border-bottom" onclick="selectCustomer('Walk-in Customer', 'No Credit Allowed', null)">
-                    <div><span class="fw-bold text-dark">Walk-in Customer</span><br><span class="badge bg-label-danger mt-1">No Credit</span></div>
-                    <i class="ri-checkbox-circle-fill fs-3 text-muted opacity-25"></i>
-                </button>
+            <div class="list-group list-group-flush border-top" id="customer-results-list" style="max-height: 320px; overflow-y: auto;">
             </div>
-            <button class="btn btn-outline-primary w-100 mt-4 py-2 fw-bold rounded-pill" onclick="toggleCustomerForm()">
+            <button class="btn btn-outline-primary w-100 mt-3 py-2 fw-bold rounded-pill" onclick="toggleCustomerForm()">
                 <i class="ri-user-add-line me-2"></i> Register New Mechanic
             </button>
         </div>
         <div id="customer-create-view" class="d-none">
-            <div class="form-floating form-floating-outline mb-3"><input type="text" class="form-control rounded-3" id="new-cust-phone" required><label>Phone Number (Required)</label></div>
-            <div class="form-floating form-floating-outline mb-4"><input type="text" class="form-control rounded-3" id="new-cust-name"><label>Mechanic / Workshop Name</label></div>
+            <div class="form-floating form-floating-outline mb-3">
+                <input type="text" class="form-control rounded-3" id="new-cust-phone" placeholder="0244123456" required>
+                <label>Phone Number (Required)</label>
+            </div>
+            <div class="form-floating form-floating-outline mb-3">
+                <input type="text" class="form-control rounded-3" id="new-cust-name" placeholder="Kojo">
+                <label>Mechanic Name</label>
+            </div>
+            <div class="form-floating form-floating-outline mb-3">
+                <input type="text" class="form-control rounded-3" id="new-cust-workshop" placeholder="Master Kojo Motors">
+                <label>Workshop Name (optional)</label>
+            </div>
+            <div class="alert alert-warning py-2 small fw-semibold">
+                <i class="ri-information-line me-1"></i>
+                New accounts start with a ₵0 credit limit. A manager must set a limit before this
+                customer can take goods on credit.
+            </div>
             <div class="d-flex gap-3">
                 <button class="btn btn-label-secondary flex-fill py-2 fw-bold rounded-pill" onclick="toggleCustomerForm()">Back</button>
                 <button class="btn btn-primary flex-fill py-2 fw-bold rounded-pill" onclick="createCustomer()">Save Profile</button>
@@ -322,7 +383,7 @@
   </div>
 </div>
 
-<!-- Checkout Modal -->
+<!-- ================= CHECKOUT MODAL ================= -->
 <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content border-0 shadow-lg rounded-4">
@@ -331,381 +392,948 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body p-4 pt-3">
-        <div class="text-center mb-4 p-4 rounded-4" style="background: linear-gradient(135deg, #f8f9fa 0%, #e4e6e8 100%);">
-            <small class="text-muted fw-bold text-uppercase letter-spacing-1">Total Amount Due</small>
-            <h1 class="text-primary fw-bolder mb-0 lh-1 mt-2" id="modal-total-due" style="font-size: 3.5rem;">0.00</h1>
+        <div class="text-center mb-3 p-3 rounded-4" style="background: linear-gradient(135deg, #f8f9fa 0%, #e4e6e8 100%);">
+            <small class="text-muted fw-bold text-uppercase">Total Amount Due</small>
+            <h1 class="text-primary fw-bolder mb-0 lh-1 mt-1" id="modal-total-due" style="font-size: 3rem;">0.00</h1>
+            <small class="text-muted fw-semibold" id="modal-verified-note"></small>
         </div>
-        <div class="row g-2 mb-4">
-            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-cash" value="CASH" checked onchange="togglePaymentInputs()"><label class="btn btn-outline-dark w-100 py-3 fw-bold rounded-3" for="pay-cash"><i class="ri-money-dollar-box-line me-1"></i> CASH</label></div>
-            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-momo" value="MOMO" onchange="togglePaymentInputs()"><label class="btn btn-outline-success w-100 py-3 fw-bold rounded-3" for="pay-momo"><i class="ri-smartphone-line me-1"></i> MOMO</label></div>
-            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-card" value="CARD" onchange="togglePaymentInputs()"><label class="btn btn-outline-info w-100 py-3 fw-bold rounded-3" for="pay-card"><i class="ri-bank-card-line me-1"></i> CARD</label></div>
-            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-split" value="SPLIT" onchange="togglePaymentInputs()"><label class="btn btn-outline-warning w-100 py-3 fw-bold rounded-3" for="pay-split"><i class="ri-pie-chart-2-line me-1"></i> SPLIT</label></div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-cash" value="CASH" checked onchange="togglePaymentInputs()"><label class="btn btn-outline-dark w-100 py-2 fw-bold rounded-3" for="pay-cash"><i class="ri-money-dollar-box-line me-1"></i> CASH</label></div>
+            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-momo" value="MOMO" onchange="togglePaymentInputs()"><label class="btn btn-outline-success w-100 py-2 fw-bold rounded-3" for="pay-momo"><i class="ri-smartphone-line me-1"></i> MOMO</label></div>
+            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-card" value="CARD" onchange="togglePaymentInputs()"><label class="btn btn-outline-info w-100 py-2 fw-bold rounded-3" for="pay-card"><i class="ri-bank-card-line me-1"></i> CARD</label></div>
+            <div class="col-6"><input type="radio" class="btn-check" name="payment" id="pay-split" value="SPLIT" onchange="togglePaymentInputs()"><label class="btn btn-outline-warning w-100 py-2 fw-bold rounded-3" for="pay-split"><i class="ri-pie-chart-2-line me-1"></i> SPLIT</label></div>
         </div>
+
         <div id="single-payment-container">
             <div class="form-floating form-floating-outline mb-2">
-                <input type="number" step="0.01" class="form-control fs-2 fw-bold text-center rounded-3" id="tendered" placeholder="Leave empty for exact" oninput="calculateChange()" style="height: 80px; background-color: #fff; border: 2px solid #e4e6e8;">
+                <input type="number" step="0.01" min="0" class="form-control fs-3 fw-bold text-center rounded-3" id="tendered"
+                       placeholder="Leave empty for exact" oninput="calculateChange()"
+                       style="height: 70px; border: 2px solid #e4e6e8;">
                 <label>Amount Tendered (GHS)</label>
             </div>
-            <div class="form-text text-center fw-medium"><i class="ri-information-line text-primary"></i> Empty = Exact Amount. Less = Credit/Debt.</div>
+            <div class="form-text text-center fw-medium">
+                <i class="ri-information-line text-primary"></i> Empty = exact amount. Less = balance goes on the mechanic's account.
+            </div>
         </div>
-        <div id="split-payment-container" class="d-none p-3 border rounded-3 bg-lighter">
-            <div class="input-group mb-2"><span class="input-group-text fw-bold bg-white" style="width: 90px;">CASH</span><input type="number" step="0.01" class="form-control fs-4 fw-bold text-end" id="split-cash" placeholder="0.00" oninput="calculateSplitTotal()"></div>
-            <div class="input-group mb-2"><span class="input-group-text fw-bold bg-white text-success" style="width: 90px;">MOMO</span><input type="number" step="0.01" class="form-control fs-4 fw-bold text-end" id="split-momo" placeholder="0.00" oninput="calculateSplitTotal()"></div>
-            <div class="input-group"><span class="input-group-text fw-bold bg-white text-info" style="width: 90px;">CARD</span><input type="number" step="0.01" class="form-control fs-4 fw-bold text-end" id="split-card" placeholder="0.00" oninput="calculateSplitTotal()"></div>
+
+        <div id="split-payment-container" class="d-none p-3 border rounded-3">
+            <div class="input-group mb-2"><span class="input-group-text fw-bold bg-white" style="width: 90px;">CASH</span><input type="number" step="0.01" min="0" class="form-control fs-5 fw-bold text-end" id="split-cash" placeholder="0.00" oninput="calculateSplitTotal()"></div>
+            <div class="input-group mb-2"><span class="input-group-text fw-bold bg-white text-success" style="width: 90px;">MOMO</span><input type="number" step="0.01" min="0" class="form-control fs-5 fw-bold text-end" id="split-momo" placeholder="0.00" oninput="calculateSplitTotal()"></div>
+            <div class="input-group"><span class="input-group-text fw-bold bg-white text-info" style="width: 90px;">CARD</span><input type="number" step="0.01" min="0" class="form-control fs-5 fw-bold text-end" id="split-card" placeholder="0.00" oninput="calculateSplitTotal()"></div>
         </div>
-        <div class="d-flex justify-content-between align-items-center mt-4 p-4 rounded-4 text-white shadow-sm" style="background: #2b2c40;">
-            <span class="fw-bold fs-5 text-white-50" id="change-label">CHANGE DUE:</span>
-            <span class="fs-1 fw-bold text-success" id="change-amount">0.00</span>
+
+        <div class="d-flex justify-content-between align-items-center mt-3 p-3 rounded-4 text-white" style="background: #2b2c40;">
+            <span class="fw-bold text-white-50" id="change-label">CHANGE DUE:</span>
+            <span class="fs-2 fw-bold text-success" id="change-amount">0.00</span>
         </div>
+        <div class="small fw-semibold text-center mt-2" id="credit-note"></div>
       </div>
       <div class="modal-footer border-top-0 p-4 pt-0">
-        <button id="complete-sale-btn" class="btn btn-success w-100 py-3 fw-bold fs-4 rounded-pill shadow-sm text-white" onclick="processSale()">COMPLETE SALE</button>
+        <button id="complete-sale-btn" class="btn btn-success w-100 py-3 fw-bold fs-5 rounded-pill text-white" onclick="processSale()">COMPLETE SALE</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Receipt Modal -->
-<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
+<!-- ================= RECEIPT MODAL ================= -->
+<div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 rounded-4">
-            <div class="modal-header bg-dark text-white border-0"><h5 class="modal-title">Receipt</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body p-0" style="background: #525659; min-height: 400px; display: flex; justify-content: center; padding: 20px;">
-                <div id="receipt-preview-content" style="width: 80mm; background: white; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: black; box-shadow: 0 10px 30px rgba(0,0,0,0.5);"></div>
+            <div class="modal-header bg-dark text-white border-0">
+                <h5 class="modal-title fw-bold" id="receipt-title">Receipt</h5>
             </div>
-            <div class="modal-footer bg-light justify-content-between"><button type="button" class="btn btn-label-secondary rounded-pill fw-bold" onclick="resetPOS()">New Sale</button><button type="button" class="btn btn-primary px-4 rounded-pill fw-bold" onclick="printReceipt()"><i class="ri-printer-line me-2"></i> Print</button></div>
+            <div class="modal-body p-0" style="background: #525659; min-height: 380px; display: flex; justify-content: center; padding: 20px;">
+                <div id="receipt-preview-content" style="width: 80mm; background: white; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: black;"></div>
+            </div>
+            <div class="modal-footer bg-light justify-content-between">
+                <button type="button" class="btn btn-label-secondary rounded-pill fw-bold" onclick="resetPOS()">
+                    <i class="ri-add-line me-1"></i> New Sale
+                </button>
+                <button type="button" class="btn btn-primary px-4 rounded-pill fw-bold" onclick="printReceipt()">
+                    <i class="ri-printer-line me-2"></i> Print
+                </button>
+            </div>
         </div>
     </div>
 </div>
-<div id="thermal-receipt-content" style="display: none;"></div>
-
+<iframe id="print-frame" style="display:none;"></iframe>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-    let isWholesale = false;
-    let selectedCustomerId = null;
-    let cart = [];
-    let cartTotal = 0.00;
+// =============================================================================
+// POS TERMINAL
+//
+// The browser holds no pricing authority. It renders what the server sends,
+// proposes a cart, and the server prices it, checks the stock and books it.
+// Every total shown at checkout is one the server computed.
+// =============================================================================
+const CSRF = '{{ csrf_token }}';
+const CAN_SEE_COST = {{ can_see_cost|yesno:"true,false" }};
+const IS_MANAGER = {{ is_manager|yesno:"true,false" }};
+const MIN_MARGIN = {{ min_margin|default:0 }};
+const URLS = {
+    products: "{% url 'sales:api_products' %}",
+    quote: "{% url 'sales:api_quote' %}",
+    process: "{% url 'sales:process_sale' %}",
+    customerSearch: "{% url 'customers:api_search' %}",
+    customerCreate: "{% url 'customers:api_create' %}",
+    batches: (id) => `/sales/api/products/${id}/batches/`,
+};
 
-    // --- SMART ADD TO CART ---
-    function addToCart(id, name, dummyPrice, sku) {
-        const card = document.getElementById('product-card-' + id);
-        const retail = parseFloat(card.dataset.priceRetail);
-        const wholesale = parseFloat(card.dataset.priceWholesale);
-        const costPrice = parseFloat(card.dataset.costPrice);
+let catalogue = { page: 1, numPages: 1, rows: [], loading: false };
+let productIndex = {};      // id -> row payload (prices, stock, floors)
+let cart = [];
+let cartTotal = 0;
+let verifiedTotal = null;   // total the SERVER computed for this cart
+let isWholesale = false;
+let selectedCustomer = null;
 
-        const isPairProduct = card.dataset.isPair === 'true';
-        const singlePrice = parseFloat(card.dataset.priceSingle) || (retail / 2 * 1.1);
+const money = (v) => Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-        const currentPrice = isWholesale ? wholesale : retail;
+// ---------------------------------------------------------------------------
+// CATALOGUE (server-side search, filter, sort, paging)
+// ---------------------------------------------------------------------------
+let searchTimer = null;
 
-        const initialSellMode = isPairProduct ? 'PAIR' : 'PIECE';
-        const initialPrice = currentPrice;
-        const initialCostGuard = isPairProduct ? (costPrice * 2) : costPrice;
+function scheduleSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { catalogue.page = 1; loadProducts(); }, 250);
+}
 
-        const existing = cart.find(i => i.id === id && i.sellMode === initialSellMode && i.price === initialPrice);
+async function loadProducts() {
+    if (catalogue.loading) return;
+    catalogue.loading = true;
+    document.getElementById('search-spinner').classList.remove('d-none');
 
-        if (existing) {
-            existing.qty++;
-        } else {
-            cart.push({
-                id, name, sku, qty: 1,
-                price: initialPrice,
-                costPrice: initialCostGuard,
-                baseCostPrice: costPrice,
-                isWholesale: isWholesale,
-                retailPrice: retail,
-                wholesalePrice: wholesale,
-                isPairProduct: isPairProduct,
-                sellMode: initialSellMode,
-                singlePrice: singlePrice,
-                pairPrice: currentPrice,
-                isCustom: false
-            });
-        }
-        renderCart();
-    }
-
-    // --- BREAK BULK TOGGLE (PAIR VS SINGLE) ---
-    function togglePairMode(index) {
-        let item = cart[index];
-        if (!item.isPairProduct) return;
-
-        if (item.sellMode === 'PAIR') {
-            item.sellMode = 'SINGLE';
-            item.price = item.singlePrice;
-            item.costPrice = item.baseCostPrice;
-            item.isCustom = false;
-        } else {
-            item.sellMode = 'PAIR';
-            item.price = item.pairPrice;
-            item.costPrice = item.baseCostPrice * 2;
-            item.isCustom = false;
-        }
-
-        const dupIdx = cart.findIndex((i, idx) => idx !== index && i.id === item.id && i.sellMode === item.sellMode && i.price === item.price);
-        if (dupIdx !== -1) {
-             cart[dupIdx].qty += item.qty;
-             cart.splice(index, 1);
-        }
-        renderCart();
-    }
-
-    // --- HAGGLING ENGINE ---
-    async function negotiatePrice(index) {
-        const item = cart[index];
-        let titleSuffix = item.isPairProduct ? ` (${item.sellMode})` : '';
-
-        const { value: newPriceStr } = await Swal.fire({
-            title: `Negotiate Price`,
-            html: `<p class="fw-bold fs-5 mb-1">${item.name} <span class="text-primary">${titleSuffix}</span></p>
-                   <p class="text-muted mb-3">Current Price: ₵${item.price.toFixed(2)}</p>`,
-            input: 'number',
-            inputAttributes: { step: '0.01' },
-            inputPlaceholder: 'Enter agreed amount',
-            showCancelButton: true,
-            confirmButtonColor: '#696cff',
-            cancelButtonColor: '#8592a3',
-            customClass: { confirmButton: 'rounded-pill px-4', cancelButton: 'rounded-pill px-4' },
-            inputValidator: (value) => {
-                if (!value || isNaN(value)) return 'Enter a valid amount';
-                if (parseFloat(value) < item.costPrice) return `HALT: Cannot sell below Break-Even cost!`;
-            }
-        });
-
-        if (newPriceStr) {
-            item.price = parseFloat(newPriceStr);
-            item.isWholesale = false;
-            item.isCustom = true;
-
-            if(item.sellMode === 'PAIR') item.pairPrice = item.price;
-            if(item.sellMode === 'SINGLE') item.singlePrice = item.price;
-
-            renderCart();
-        }
-    }
-
-    // --- CART RENDERING ---
-    function renderCart() {
-        const container = document.getElementById('cart-container');
-        if (cart.length === 0) {
-            cartTotal = 0;
-            container.innerHTML = `<div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted"><div class="bg-label-secondary p-4 rounded-circle mb-3"><i class="ri-shopping-cart-2-line ri-3x text-primary"></i></div><h5 class="fw-bold text-dark">Cart is empty</h5><small>Scan item or click part to begin</small></div>`;
-            document.getElementById('cart-total').innerText = '0.00';
-            return;
-        }
-        let html = '';
-        let total = 0;
-        cart.forEach((item, index) => {
-            let itemTotal = item.price * item.qty;
-            total += itemTotal;
-
-            let badges = '';
-            if (item.isPairProduct) {
-                if(item.sellMode === 'PAIR') badges += `<span class="cart-badge bg-pair" onclick="togglePairMode(${index})" title="Click to split into Single"><i class="ri-checkbox-multiple-line"></i> PAIR</span>`;
-                else badges += `<span class="cart-badge bg-single" onclick="togglePairMode(${index})" title="Click to sell as Pair"><i class="ri-file-copy-2-line"></i> SINGLE</span>`;
-            }
-            if (item.isCustom) badges += `<span class="cart-badge bg-custom">HAGGLED</span>`;
-            else if (item.isWholesale) badges += `<span class="cart-badge bg-wholesale">W-SALE</span>`;
-
-            html += `<div class="cart-item">
-                <div style="flex:1; overflow:hidden; margin-right:15px;">
-                    <div class="fw-bold text-truncate text-dark mb-1" style="font-size: 1.05rem;">${item.name}</div>
-                    <div class="mb-2">${badges}</div>
-
-                    <div class="action-btn-soft" onclick="negotiatePrice(${index})" title="Tap to negotiate">
-                        ₵${item.price.toFixed(2)} <i class="ri-pencil-fill ms-1"></i>
-                    </div>
-                </div>
-                <div class="d-flex flex-column align-items-end gap-2">
-                    <div class="fw-bolder fs-5 text-dark">₵${itemTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div class="qty-control">
-                        <div class="qty-btn" onclick="updateQty(${index}, -1)"><i class="ri-subtract-line"></i></div>
-                        <div class="qty-val">${item.qty}</div>
-                        <div class="qty-btn" onclick="updateQty(${index}, 1)"><i class="ri-add-line"></i></div>
-                    </div>
-                </div>
-            </div>`;
-        });
-        cartTotal = total;
-        container.innerHTML = html;
-        document.getElementById('cart-total').innerText = total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        container.scrollTop = container.scrollHeight;
-    }
-
-    function updateQty(index, delta) {
-        cart[index].qty += delta;
-        if (cart[index].qty <= 0) cart.splice(index, 1);
-        renderCart();
-    }
-
-    function toggleGlobalWholesale() {
-        isWholesale = document.getElementById('wholesale-mode-check').checked;
-        document.querySelectorAll('.product-card').forEach(card => {
-            const priceEl = document.getElementById('price-display-' + card.id.split('-')[2]);
-            priceEl.innerText = parseFloat(card.dataset[isWholesale ? 'priceWholesale' : 'priceRetail']).toLocaleString(undefined, {minimumFractionDigits: 2});
-            priceEl.className = isWholesale ? "fw-bolder text-warning fs-4" : "fw-bolder text-primary fs-4";
-        });
-        cart.forEach(item => {
-            if (!item.isCustom) {
-                item.pairPrice = isWholesale ? item.wholesalePrice : item.retailPrice;
-                if(item.sellMode !== 'SINGLE') item.price = item.pairPrice;
-                item.isWholesale = isWholesale;
-            }
-        });
-        renderCart();
-    }
-
-    // --- CATEGORY & SEARCH FILTER ENGINE ---
-    let currentCategory = 'all';
-
-    function filterCategory(categoryId, element) {
-        currentCategory = categoryId.toString();
-
-        // Update UI pill active states
-        document.querySelectorAll('.cat-pill').forEach(pill => {
-            pill.classList.remove('active');
-        });
-        if (element) {
-            element.classList.add('active');
-        }
-
-        applyFilters();
-    }
-
-    function applyFilters() {
-        const term = document.getElementById('product-search').value.toLowerCase().trim();
-
-        document.querySelectorAll('.product-card').forEach(card => {
-            const matchesSearch = card.dataset.name.includes(term) ||
-                                  card.dataset.sku.includes(term) ||
-                                  card.dataset.barcode.includes(term) ||
-                                  term === '';
-            const matchesCategory = currentCategory === 'all' ||
-                                    card.dataset.category === currentCategory;
-
-            // Only show the card if it matches BOTH the active category AND the search text
-            if (matchesSearch && matchesCategory) {
-                card.style.display = 'flex';
-            } else {
-                card.style.display = 'none';
-            }
-        });
-    }
-
-    // Tie the search bar into the unified filter engine
-    document.getElementById('product-search').addEventListener('keyup', function(e) {
-        applyFilters();
+    const params = new URLSearchParams({
+        q: document.getElementById('product-search').value.trim(),
+        category: document.getElementById('filter-category').value,
+        stock: document.getElementById('filter-stock').value,
+        sort: document.getElementById('filter-sort').value,
+        per_page: document.getElementById('filter-per-page').value,
+        page: catalogue.page,
     });
 
-    function selectCustomer(name, phone, id) {
-        document.getElementById('selected-customer-name').innerText = name;
-        document.getElementById('selected-customer-phone').innerText = phone;
-        selectedCustomerId = id;
+    try {
+        const res = await fetch(`${URLS.products}?${params}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || 'Could not load parts');
 
-        const customerModal = bootstrap.Modal.getInstance(document.getElementById('customerModal'));
-        if (customerModal) {
-            customerModal.hide();
+        catalogue.rows = data.results;
+        catalogue.numPages = data.num_pages;
+        catalogue.page = data.page;
+        data.results.forEach(row => { productIndex[row.id] = row; });
+
+        renderProductRows(data);
+    } catch (e) {
+        document.getElementById('product-rows').innerHTML =
+            `<tr><td colspan="9" class="text-center py-5 text-danger fw-bold">${esc(e.message)}</td></tr>`;
+    } finally {
+        catalogue.loading = false;
+        document.getElementById('search-spinner').classList.add('d-none');
+    }
+}
+
+function renderProductRows(data) {
+    const body = document.getElementById('product-rows');
+    const colspan = 4 + (IS_MANAGER ? 1 : 0) + (CAN_SEE_COST ? 1 : 0) + 1;
+
+    if (!data.results.length) {
+        body.innerHTML = `<tr><td colspan="${colspan}" class="text-center py-5">
+            <i class="ri-inbox-line ri-3x text-muted d-block mb-2"></i>
+            <h6 class="fw-bold text-muted">No parts match this search</h6>
+            <small class="text-muted">Try a different spelling, or switch the stock filter to "Show everything".</small>
+        </td></tr>`;
+    } else {
+        body.innerHTML = data.results.map(row => productRowHtml(row)).join('');
+    }
+
+    document.getElementById('result-count').textContent = data.total
+        ? `Showing ${data.start_index}–${data.end_index} of ${data.total} parts`
+        : 'No parts found';
+    document.getElementById('page-indicator').textContent = `Page ${data.page} of ${data.num_pages}`;
+    document.getElementById('prev-page').disabled = !data.has_previous;
+    document.getElementById('next-page').disabled = !data.has_next;
+}
+
+function productRowHtml(row) {
+    // Stock badge — the number that actually matters on the shop floor.
+    let stockClass = 'stock-ok', stockText = `${row.pieces} pcs`;
+    if (row.is_out) { stockClass = 'stock-none'; stockText = 'OUT'; }
+    else if (row.is_low) { stockClass = 'stock-low'; }
+
+    let pairInfo = '';
+    if (row.is_pair && row.pieces > 0) {
+        const odd = row.pieces % 2;
+        pairInfo = `<div class="part-meta mt-1">${row.sellable_pairs} pair${row.sellable_pairs === 1 ? '' : 's'}${odd ? ' + 1 single' : ''}</div>`;
+    }
+
+    // A promotion shows the struck-through normal price so the cashier can see
+    // (and tell the customer) exactly what is being taken off.
+    const promoTag = row.promo
+        ? `<div class="price-sub"><span class="tag tag-promo">${esc(row.promo.label)}</span>
+           <s class="text-muted">₵${money(row.promo.normal_price)}</s></div>`
+        : '';
+
+    const priceCell = row.is_pair
+        ? `<div class="price-main ${row.promo ? 'text-danger' : ''}">₵${money(row.retail)} <small class="text-muted fw-normal">/pair</small></div>
+           <div class="price-sub">single ₵${money(row.single_retail)}${row.split_mode === 'PERCENT' ? ` · ${row.split_percentage}%` : ' · fixed'}</div>
+           ${promoTag}`
+        : `<div class="price-main ${row.promo ? 'text-danger' : ''}">₵${money(row.retail)}</div>
+           <div class="price-sub">per ${esc(row.unit)}</div>
+           ${promoTag}`;
+
+    let costCell = '';
+    if (CAN_SEE_COST) {
+        costCell = `<td class="text-end">
+            <div class="fw-bold text-dark">₵${money(row.cost)}</div>
+            <div class="price-sub ${row.margin_retail < MIN_MARGIN ? 'text-danger' : 'text-success'}">${money(row.margin_retail)}% margin</div>
+        </td>`;
+    }
+
+    const wholesaleCell = IS_MANAGER
+        ? `<td class="text-end"><div class="fw-semibold text-dark">₵${money(row.wholesale)}</div>
+           ${row.is_pair ? `<div class="price-sub">single ₵${money(row.single_wholesale)}</div>` : ''}</td>`
+        : '';
+
+    const buttons = row.is_pair
+        ? `<button class="btn btn-primary btn-add me-1" onclick="addToCart(${row.id}, 'PAIR')" ${row.pieces < 2 ? 'disabled' : ''}>
+               <i class="ri-checkbox-multiple-line"></i> Pair
+           </button>
+           <button class="btn btn-label-primary btn-add" onclick="addToCart(${row.id}, 'SINGLE')" ${row.pieces < 1 ? 'disabled' : ''}>
+               <i class="ri-file-copy-2-line"></i> Single
+           </button>`
+        : `<button class="btn btn-primary btn-add" onclick="addToCart(${row.id}, 'PIECE')" ${row.pieces < 1 ? 'disabled' : ''}>
+               <i class="ri-add-line"></i> Add
+           </button>`;
+
+    return `<tr class="${row.is_out ? 'is-out' : ''}">
+        <td>
+            <div class="part-name">${esc(row.name)}</div>
+            <div class="part-meta">
+                ${esc(row.sku)}${row.brand ? ' · ' + esc(row.brand) : ''}
+                ${row.is_pair ? '<span class="tag tag-pair ms-1">PAIR ITEM</span>' : ''}
+                ${row.shelf ? `<span class="tag tag-shelf ms-1"><i class="ri-map-pin-line"></i> ${esc(row.shelf)}</span>` : ''}
+                ${row.has_suggestion ? '<span class="tag ms-1" style="background:#fff2d6;color:#a97400;" title="A shipment suggested a new price">PRICE PENDING</span>' : ''}
+            </div>
+        </td>
+        <td><span class="text-muted fw-semibold small">${esc(row.category) || '—'}</span></td>
+        <td class="text-center">
+            <span class="stock-pill ${stockClass}" onclick="showStockDetail(${row.id})" title="Click for batch detail">
+                ${stockText} <i class="ri-information-line"></i>
+            </span>
+            ${pairInfo}
+            <div class="part-meta">${row.batches} batch${row.batches === 1 ? '' : 'es'}</div>
+        </td>
+        <td class="text-end">${priceCell}</td>
+        ${wholesaleCell}
+        ${costCell}
+        <td class="text-end">${buttons}</td>
+    </tr>`;
+}
+
+function changePage(delta) {
+    const next = catalogue.page + delta;
+    if (next < 1 || next > catalogue.numPages) return;
+    catalogue.page = next;
+    loadProducts();
+    document.querySelector('.table-scroll').scrollTop = 0;
+}
+
+// ---------------------------------------------------------------------------
+// STOCK DETAIL — salespeople can see exactly what is on the shelf
+// ---------------------------------------------------------------------------
+async function showStockDetail(productId) {
+    const modal = new bootstrap.Modal(document.getElementById('stockModal'));
+    document.getElementById('stock-modal-body').innerHTML = '<div class="text-center py-5 text-muted">Loading…</div>';
+    modal.show();
+
+    try {
+        const res = await fetch(URLS.batches(productId));
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || 'Could not load stock');
+
+        const p = data.product;
+        document.getElementById('stock-modal-title').textContent = p.name;
+        document.getElementById('stock-modal-subtitle').textContent = `${p.sku} — ${p.pieces_here} piece(s) at this shop, ${p.pieces_total} in the business`;
+
+        let summary = `<div class="row g-2 mb-3">
+            <div class="col"><div class="shift-chip w-100"><div class="label">Here</div><div class="value">${p.pieces_here} pcs</div></div></div>
+            <div class="col"><div class="shift-chip w-100"><div class="label">All shops</div><div class="value">${p.pieces_total} pcs</div></div></div>`;
+        if (p.is_pair) {
+            summary += `<div class="col"><div class="shift-chip w-100"><div class="label">Sellable pairs</div><div class="value">${p.pairs_here}${p.odd_piece ? ' +1' : ''}</div></div></div>`;
+        }
+        if (CAN_SEE_COST) {
+            summary += `<div class="col"><div class="shift-chip w-100"><div class="label">Avg cost</div><div class="value">₵${money(p.average_cost || p.cost)}</div></div></div>`;
+        }
+        summary += `</div>`;
+
+        if (p.is_pair) {
+            summary += `<div class="alert alert-primary py-2 small fw-semibold">
+                <i class="ri-price-tag-3-line me-1"></i>
+                Pair price <strong>₵${money(p.retail)}</strong> ·
+                one side sells for <strong>₵${money(p.single)}</strong>
+                ${p.split_mode === 'PERCENT' ? `(${p.split_percentage}% of the pair price — moves automatically if the pair price changes)` : '(fixed amount)'}
+            </div>`;
         }
 
-        if (document.getElementById('checkoutModal').classList.contains('show')) calculateChange();
-    }
-    function openCustomerModal() { new bootstrap.Modal(document.getElementById('customerModal')).show(); }
+        const rows = data.batches.map(b => `<tr class="${b.is_here ? '' : 'text-muted'}">
+            <td class="fw-bold">${esc(b.batch_number)}</td>
+            <td>${esc(b.location)} ${b.is_here ? '<span class="badge bg-label-primary">here</span>' : ''}</td>
+            <td class="text-center fw-bold">${b.quantity}</td>
+            <td class="text-center">${b.sold} of ${b.initial_quantity}</td>
+            <td>${esc(b.supplier)}</td>
+            <td>${esc(b.received)}</td>
+            ${CAN_SEE_COST ? `<td class="text-end">₵${money(b.cost_price)}</td><td class="text-end">₵${money(b.stock_value)}</td>` : ''}
+        </tr>`).join('');
 
-    function openCheckoutModal() {
-        if(cart.length===0) return Swal.fire({icon: 'warning', title: 'Cart Empty', text: 'Add items first', customClass: {confirmButton: 'btn btn-primary rounded-pill px-4'}});
-        document.getElementById('modal-total-due').innerText = cartTotal.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('tendered').value = '';
-        document.getElementById('pay-cash').checked = true;
-        togglePaymentInputs(); calculateChange();
-        new bootstrap.Modal(document.getElementById('checkoutModal')).show();
+        document.getElementById('stock-modal-body').innerHTML = summary + (data.batches.length ? `
+            <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead><tr>
+                    <th>Batch</th><th>Location</th><th class="text-center">On hand</th>
+                    <th class="text-center">Sold</th><th>Supplier</th><th>Received</th>
+                    ${CAN_SEE_COST ? '<th class="text-end">Cost/pc</th><th class="text-end">Value</th>' : ''}
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>` : '<div class="alert alert-danger fw-semibold mb-0">No stock of this part anywhere.</div>');
+    } catch (e) {
+        document.getElementById('stock-modal-body').innerHTML =
+            `<div class="alert alert-danger fw-semibold">${esc(e.message)}</div>`;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CART
+// ---------------------------------------------------------------------------
+function priceFor(row, mode) {
+    if (mode === 'SINGLE') return isWholesale ? row.single_wholesale : row.single_retail;
+    return isWholesale ? row.wholesale : row.retail;
+}
+
+// The floor the server will enforce for this exact mode and pricing tier.
+// With a promotion running it IS the promotional price -- not a pesewa lower.
+function floorFor(row, mode) {
+    if (isWholesale) {
+        if (mode === 'SINGLE') return row.floor_single_wholesale;
+        if (mode === 'PAIR') return row.floor_pair_wholesale;
+        return row.floor_piece_wholesale;
+    }
+    if (mode === 'SINGLE') return row.floor_single;
+    if (mode === 'PAIR') return row.floor_pair;
+    return row.floor_piece;
+}
+
+function piecesPerUnit(mode) { return mode === 'PAIR' ? 2 : 1; }
+
+function addToCart(productId, mode) {
+    const row = productIndex[productId];
+    if (!row) return;
+
+    const existing = cart.find(l => l.id === productId && l.sellMode === mode && !l.isCustom);
+    if (existing) {
+        existing.qty += 1;
+    } else {
+        cart.push({
+            id: productId,
+            name: row.name,
+            sku: row.sku,
+            isPair: row.is_pair,
+            sellMode: mode,
+            qty: 1,
+            price: priceFor(row, mode),
+            listPrice: priceFor(row, mode),
+            isCustom: false,
+        });
+    }
+    renderCart();
+}
+
+function piecesNeededFor(productId) {
+    return cart.filter(l => l.id === productId)
+               .reduce((sum, l) => sum + l.qty * piecesPerUnit(l.sellMode), 0);
+}
+
+function renderCart() {
+    const container = document.getElementById('cart-container');
+
+    if (!cart.length) {
+        container.innerHTML = `<div class="h-100 d-flex flex-column align-items-center justify-content-center text-muted">
+            <div class="bg-label-secondary p-4 rounded-circle mb-3"><i class="ri-shopping-cart-2-line ri-3x text-primary"></i></div>
+            <h5 class="fw-bold text-dark">Cart is empty</h5>
+            <small>Search a part and add it to begin</small>
+        </div>`;
+        cartTotal = 0;
+        verifiedTotal = null;
+        document.getElementById('cart-total').textContent = '0.00';
+        document.getElementById('cart-item-count').textContent = '0 units · 0 pieces';
+        document.getElementById('discount-row').style.display = 'none';
+        document.getElementById('charge-btn').disabled = true;
+        return;
     }
 
-    function togglePaymentInputs() {
-        const isSplit = document.getElementById('pay-split').checked;
-        document.getElementById('single-payment-container').classList.toggle('d-none', isSplit);
-        document.getElementById('split-payment-container').classList.toggle('d-none', !isSplit);
-        isSplit ? calculateSplitTotal() : calculateChange();
+    let total = 0, discount = 0, units = 0, pieces = 0;
+
+    const html = cart.map((line, index) => {
+        const row = productIndex[line.id] || {};
+        const lineTotal = line.price * line.qty;
+        const linePieces = line.qty * piecesPerUnit(line.sellMode);
+        total += lineTotal;
+        units += line.qty;
+        pieces += linePieces;
+
+        // Savings are measured against the UNDISCOUNTED price, so a promotion
+        // and a negotiated price both show up in the customer's total saving.
+        const normalUnit = (line.sellMode === 'SINGLE' && row.normal_single_retail != null)
+            ? row.normal_single_retail
+            : (row.normal_retail != null ? row.normal_retail : line.listPrice);
+        if (!isWholesale && line.price < normalUnit) discount += (normalUnit - line.price) * line.qty;
+
+        const needed = piecesNeededFor(line.id);
+        const available = row.pieces != null ? row.pieces : null;
+        const overStock = available != null && needed > available;
+        const floor = floorFor(row, line.sellMode);
+        const belowFloor = floor != null && line.price < floor;
+
+        // Pair items can be flipped between selling as a pair and breaking one out.
+        const modeSwitch = line.isPair ? `
+            <div class="mode-switch">
+                <span class="mode-opt ${line.sellMode === 'PAIR' ? 'active' : ''}" onclick="setMode(${index}, 'PAIR')">Pair</span>
+                <span class="mode-opt ${line.sellMode === 'SINGLE' ? 'active' : ''}" onclick="setMode(${index}, 'SINGLE')">Single</span>
+            </div>` : '';
+
+        let priceClass = 'price-chip';
+        if (belowFloor) priceClass += ' below';
+        else if (line.isCustom) priceClass += ' haggled';
+
+        const promoBadge = row.promo
+            ? `<span class="tag tag-promo ms-1">${esc(row.promo.label)}</span>` : '';
+
+        return `<div class="cart-line ${overStock ? 'over-stock' : ''} ${row.promo ? 'promo-line' : ''}">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div style="flex:1; min-width:0;">
+                    <div class="fw-bold text-dark text-truncate" style="font-size: 0.95rem;">
+                        ${esc(line.name)}${promoBadge}
+                    </div>
+                    <div class="part-meta">${esc(line.sku)} · ${linePieces} piece${linePieces === 1 ? '' : 's'} off the shelf</div>
+                </div>
+                <i class="ri-close-circle-line fs-5 text-muted ms-2" style="cursor:pointer;" onclick="removeLine(${index})" title="Remove"></i>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    ${modeSwitch}
+                    <span class="${priceClass}" onclick="negotiatePrice(${index})" title="Tap to negotiate">
+                        ₵${money(line.price)} <i class="ri-pencil-fill"></i>
+                    </span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="qty-control">
+                        <div class="qty-btn" onclick="updateQty(${index}, -1)"><i class="ri-subtract-line"></i></div>
+                        <div class="qty-val">${line.qty}</div>
+                        <div class="qty-btn" onclick="updateQty(${index}, 1)"><i class="ri-add-line"></i></div>
+                    </div>
+                    <div class="fw-bolder fs-6 text-dark" style="min-width: 84px; text-align: right;">₵${money(lineTotal)}</div>
+                </div>
+            </div>
+
+            ${overStock ? `<div class="small fw-bold text-danger mt-2">
+                <i class="ri-error-warning-line"></i> Only ${available} piece(s) in stock — this cart needs ${needed}.
+            </div>` : ''}
+            ${row.promo ? `<div class="small fw-bold text-danger mt-2">
+                <i class="ri-price-tag-3-line"></i> ${esc(row.promo.name)} — was ₵${money(row.promo.normal_price)}${row.promo.ends_at ? `, ends ${esc(row.promo.ends_at)}` : ''}
+            </div>` : ''}
+            ${belowFloor && !row.promo ? `<div class="small fw-bold text-danger mt-2">
+                <i class="ri-alert-line"></i> Below the ₵${money(floor)} floor — this will be rejected
+            </div>` : ''}
+        </div>`;
+    }).join('');
+
+    container.innerHTML = html;
+    cartTotal = Math.round(total * 100) / 100;
+    verifiedTotal = null;   // cart changed, so any prior server quote is stale
+
+    document.getElementById('cart-total').textContent = money(cartTotal);
+    document.getElementById('cart-item-count').textContent = `${units} unit${units === 1 ? '' : 's'} · ${pieces} piece${pieces === 1 ? '' : 's'}`;
+    document.getElementById('cart-discount').textContent = '₵' + money(discount);
+    document.getElementById('discount-row').style.display = discount > 0 ? 'flex' : 'none';
+    document.getElementById('charge-btn').disabled = false;
+}
+
+function setMode(index, mode) {
+    const line = cart[index];
+    if (!line.isPair || line.sellMode === mode) return;
+    const row = productIndex[line.id];
+
+    line.sellMode = mode;
+    if (!line.isCustom) {
+        line.price = priceFor(row, mode);
+        line.listPrice = line.price;
+    } else {
+        // A negotiated pair price must not silently carry over to a single.
+        line.listPrice = priceFor(row, mode);
+        line.price = line.listPrice;
+        line.isCustom = false;
     }
 
-    function calculateChange() {
-        const tenderedStr = document.getElementById('tendered').value;
-        const tendered = tenderedStr === "" ? cartTotal : (parseFloat(tenderedStr) || 0);
-        const change = tendered - cartTotal;
-        updateMathDisplay(change);
+    // Merge with an identical line if one already exists.
+    const twin = cart.findIndex((l, i) => i !== index && l.id === line.id
+        && l.sellMode === line.sellMode && Math.abs(l.price - line.price) < 0.005);
+    if (twin !== -1) {
+        cart[twin].qty += line.qty;
+        cart.splice(index, 1);
+    }
+    renderCart();
+}
+
+function updateQty(index, delta) {
+    cart[index].qty += delta;
+    if (cart[index].qty <= 0) cart.splice(index, 1);
+    renderCart();
+}
+
+function removeLine(index) { cart.splice(index, 1); renderCart(); }
+
+function clearCart() {
+    if (!cart.length) return;
+    Swal.fire({
+        icon: 'question', title: 'Clear the cart?', showCancelButton: true,
+        confirmButtonText: 'Yes, clear it', confirmButtonColor: '#ff3e1d',
+    }).then(r => { if (r.isConfirmed) { cart = []; renderCart(); } });
+}
+
+async function negotiatePrice(index) {
+    const line = cart[index];
+    const row = productIndex[line.id] || {};
+    const floor = floorFor(row, line.sellMode);
+    const modeLabel = line.isPair ? ` (${line.sellMode})` : '';
+
+    // The floor is absolute. Nobody -- cashier, manager or owner -- can go under
+    // it here. A promotion lowers the price, and lowers the floor itself only
+    // when the promotional price is below cost + margin.
+    const promoNote = row.promo
+        ? `<p class="small mb-1 text-danger">
+               On promotion: ${esc(row.promo.name)} (${esc(row.promo.label)}),
+               normally ₵${money(row.promo.normal_price)}.
+           </p>`
+        : '';
+    const floorNote = promoNote + `<p class="small mb-0">
+            Absolute lowest: <strong>₵${money(floor)}</strong>.
+            <span class="text-muted d-block">
+                Nobody can authorise less than this at the till — a manager would have
+                to set up a promotion.
+            </span>
+        </p>`;
+
+    const { value } = await Swal.fire({
+        title: 'Negotiate Price',
+        html: `<p class="fw-bold fs-6 mb-1">${esc(line.name)}<span class="text-primary">${modeLabel}</span></p>
+               <p class="text-muted small mb-2">Current price ₵${money(line.price)}</p>
+               ${floorNote}`,
+        input: 'number',
+        inputAttributes: { step: '0.01', min: '0' },
+        inputValue: line.price.toFixed(2),
+        showCancelButton: true,
+        confirmButtonColor: '#696cff',
+        inputValidator: (v) => {
+            if (!v || isNaN(v) || parseFloat(v) <= 0) return 'Enter a valid amount';
+            if (parseFloat(v) < floor - 0.005) {
+                return `₵${money(v)} is below the ₵${money(floor)} floor. `
+                     + `This cannot be authorised at the till.`;
+            }
+        }
+    });
+
+    if (!value) return;
+
+    line.price = Math.round(parseFloat(value) * 100) / 100;
+    line.isCustom = Math.abs(line.price - line.listPrice) > 0.005;
+    renderCart();
+}
+
+function toggleGlobalWholesale() {
+    isWholesale = document.getElementById('wholesale-mode-check').checked;
+    cart.forEach(line => {
+        if (line.isCustom) return;   // never overwrite a negotiated price
+        const row = productIndex[line.id];
+        if (!row) return;
+        line.price = priceFor(row, line.sellMode);
+        line.listPrice = line.price;
+    });
+    renderCart();
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOMER
+// ---------------------------------------------------------------------------
+function openCustomerModal() {
+    document.getElementById('customer-search-view').classList.remove('d-none');
+    document.getElementById('customer-create-view').classList.add('d-none');
+    renderCustomerResults([]);
+    new bootstrap.Modal(document.getElementById('customerModal')).show();
+    setTimeout(() => document.getElementById('customer-search-input').focus(), 400);
+}
+
+function toggleCustomerForm() {
+    document.getElementById('customer-search-view').classList.toggle('d-none');
+    document.getElementById('customer-create-view').classList.toggle('d-none');
+}
+
+let customerTimer = null;
+let customerResults = [];   // last search results, referenced by index from the DOM
+
+document.getElementById('customer-search-input').addEventListener('input', function () {
+    clearTimeout(customerTimer);
+    const term = this.value.trim();
+    customerTimer = setTimeout(async () => {
+        if (term.length < 2) return renderCustomerResults([]);
+        try {
+            const res = await fetch(`${URLS.customerSearch}?q=${encodeURIComponent(term)}`);
+            const data = await res.json();
+            renderCustomerResults(data.results || []);
+        } catch (e) { renderCustomerResults([]); }
+    }, 250);
+});
+
+function renderCustomerResults(results) {
+    customerResults = results;
+    const list = document.getElementById('customer-results-list');
+    const walkIn = `<button class="list-group-item list-group-item-action py-3 px-2 d-flex justify-content-between align-items-center border-0 border-bottom"
+        onclick="selectCustomer(null)">
+        <div><span class="fw-bold text-dark">Walk-in Customer</span><br>
+        <span class="badge bg-label-danger mt-1">Cash only — no credit</span></div>
+        <i class="ri-user-line fs-4 text-muted"></i>
+    </button>`;
+
+    // Rows reference the result by INDEX rather than embedding JSON in an
+    // attribute -- a workshop name containing a quote cannot break the markup.
+    const rows = results.map((c, index) => {
+        const canCredit = c.available_credit > 0;
+        return `<button class="list-group-item list-group-item-action py-3 px-2 border-0 border-bottom"
+            onclick="selectCustomer(customerResults[${index}])">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="fw-bold text-dark">${esc(c.name)}</span>
+                    <div class="small text-muted fw-semibold">${esc(c.phone)}${c.customer_type ? ' · ' + esc(c.customer_type) : ''}</div>
+                </div>
+                <div class="text-end">
+                    <div class="small fw-bold ${c.current_debt > 0 ? 'text-danger' : 'text-muted'}">Owes ₵${money(c.current_debt)}</div>
+                    <div class="small fw-bold ${canCredit ? 'text-success' : 'text-muted'}">Credit left ₵${money(c.available_credit)}</div>
+                </div>
+            </div>
+        </button>`;
+    }).join('');
+
+    list.innerHTML = walkIn + rows;
+}
+
+function selectCustomer(customer) {
+    selectedCustomer = customer;
+    const nameEl = document.getElementById('selected-customer-name');
+    const subEl = document.getElementById('selected-customer-phone');
+
+    if (!customer) {
+        nameEl.textContent = 'Walk-in Customer';
+        subEl.textContent = 'Cash sale — no credit allowed';
+    } else {
+        nameEl.textContent = customer.name;
+        subEl.innerHTML = `${esc(customer.phone)} · owes <strong>₵${money(customer.current_debt)}</strong>
+                           · credit left <strong>₵${money(customer.available_credit)}</strong>`;
     }
 
-    function calculateSplitTotal() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('customerModal'));
+    if (modal) modal.hide();
+    if (document.getElementById('checkoutModal').classList.contains('show')) calculateChange();
+}
+
+async function createCustomer() {
+    const phone = document.getElementById('new-cust-phone').value.trim();
+    const name = document.getElementById('new-cust-name').value.trim();
+    const workshop = document.getElementById('new-cust-workshop').value.trim();
+
+    if (!phone) return Swal.fire({icon: 'warning', title: 'Phone number is required'});
+
+    try {
+        const res = await fetch(URLS.customerCreate, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+            body: JSON.stringify({phone, name, workshop}),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.message || 'Could not save');
+
+        selectCustomer(data.customer);
+        document.getElementById('new-cust-phone').value = '';
+        document.getElementById('new-cust-name').value = '';
+        document.getElementById('new-cust-workshop').value = '';
+        toggleCustomerForm();
+        Swal.fire({icon: 'success', title: 'Customer saved', timer: 1200, showConfirmButton: false});
+    } catch (e) {
+        Swal.fire({icon: 'error', title: 'Could not save customer', text: e.message});
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CHECKOUT
+// ---------------------------------------------------------------------------
+function cartPayload() {
+    return cart.map(l => ({
+        id: l.id, qty: l.qty, sellMode: l.sellMode, price: l.price.toFixed(2),
+    }));
+}
+
+async function openCheckoutModal() {
+    if (!cart.length) {
+        return Swal.fire({icon: 'warning', title: 'Cart Empty', text: 'Add a part first'});
+    }
+
+    const btn = document.getElementById('charge-btn');
+    btn.disabled = true;
+    btn.innerHTML = 'CHECKING STOCK & PRICES…';
+
+    // Ask the server to price the cart BEFORE we take money, so the cashier
+    // never sees a total the server would refuse.
+    try {
+        const res = await fetch(URLS.quote, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+            body: JSON.stringify({cart: cartPayload(), wholesale: isWholesale}),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            Swal.fire({icon: 'error', title: 'Cannot charge this cart', text: data.message});
+            return;
+        }
+        verifiedTotal = data.total;
+        cartTotal = data.total;
+        document.getElementById('cart-total').textContent = money(cartTotal);
+    } catch (e) {
+        Swal.fire({icon: 'error', title: 'Connection problem', text: 'Could not reach the server to confirm prices.'});
+        return;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'CHARGE CUSTOMER <i class="ri-arrow-right-line ms-2"></i>';
+    }
+
+    document.getElementById('modal-total-due').textContent = money(cartTotal);
+    document.getElementById('modal-verified-note').textContent = 'Confirmed against live prices and stock';
+    document.getElementById('tendered').value = '';
+    document.getElementById('split-cash').value = '';
+    document.getElementById('split-momo').value = '';
+    document.getElementById('split-card').value = '';
+    document.getElementById('pay-cash').checked = true;
+    togglePaymentInputs();
+    new bootstrap.Modal(document.getElementById('checkoutModal')).show();
+    setTimeout(() => document.getElementById('tendered').focus(), 400);
+}
+
+function togglePaymentInputs() {
+    const isSplit = document.getElementById('pay-split').checked;
+    document.getElementById('single-payment-container').classList.toggle('d-none', isSplit);
+    document.getElementById('split-payment-container').classList.toggle('d-none', !isSplit);
+    isSplit ? calculateSplitTotal() : calculateChange();
+}
+
+function currentMethod() {
+    return document.querySelector('input[name="payment"]:checked').value;
+}
+
+function calculateChange() {
+    const raw = document.getElementById('tendered').value;
+    const tendered = raw === '' ? cartTotal : (parseFloat(raw) || 0);
+    updateMathDisplay(tendered - cartTotal, currentMethod() === 'CASH' ? tendered : 0);
+}
+
+function calculateSplitTotal() {
+    const cash = parseFloat(document.getElementById('split-cash').value) || 0;
+    const momo = parseFloat(document.getElementById('split-momo').value) || 0;
+    const card = parseFloat(document.getElementById('split-card').value) || 0;
+    updateMathDisplay((cash + momo + card) - cartTotal, cash);
+}
+
+function updateMathDisplay(difference, cashTendered) {
+    const changeEl = document.getElementById('change-amount');
+    const label = document.getElementById('change-label');
+    const note = document.getElementById('credit-note');
+    const btn = document.getElementById('complete-sale-btn');
+    difference = Math.round(difference * 100) / 100;
+
+    const enable = (text, cls) => {
+        btn.disabled = false;
+        btn.textContent = text;
+        btn.className = `btn ${cls} w-100 py-3 fw-bold fs-5 rounded-pill text-white`;
+    };
+    const disable = (text) => {
+        btn.disabled = true;
+        btn.textContent = text;
+        btn.className = 'btn btn-secondary w-100 py-3 fw-bold fs-5 rounded-pill text-white opacity-50';
+    };
+
+    if (difference >= 0) {
+        label.textContent = 'CHANGE DUE:';
+        changeEl.textContent = '₵' + money(difference);
+        changeEl.className = 'fs-2 fw-bold text-success';
+
+        // You cannot hand back change out of money you never received in cash.
+        if (difference > cashTendered + 0.005) {
+            note.innerHTML = `<span class="text-danger">Change of ₵${money(difference)} cannot come out of
+                              ₵${money(cashTendered)} cash. Charge the exact amount instead.</span>`;
+            disable('FIX THE PAYMENT');
+        } else {
+            note.textContent = '';
+            enable('COMPLETE SALE', 'btn-success');
+        }
+        return;
+    }
+
+    const debt = Math.abs(difference);
+    label.textContent = 'BALANCE ON ACCOUNT:';
+    changeEl.textContent = '₵' + money(debt);
+    changeEl.className = 'fs-2 fw-bold text-danger';
+
+    if (!selectedCustomer) {
+        note.innerHTML = '<span class="text-danger">Select a mechanic before letting goods leave unpaid.</span>';
+        disable('SELECT A MECHANIC');
+    } else if (debt > selectedCustomer.available_credit + 0.005) {
+        note.innerHTML = `<span class="text-danger">${esc(selectedCustomer.name)} has only
+                          ₵${money(selectedCustomer.available_credit)} credit left — this needs ₵${money(debt)}.</span>`;
+        disable('CREDIT LIMIT REACHED');
+    } else {
+        note.innerHTML = `<span class="text-muted">${esc(selectedCustomer.name)} will owe
+                          ₵${money(selectedCustomer.current_debt + debt)} in total.</span>`;
+        enable('CONFIRM CREDIT SALE', 'btn-danger');
+    }
+}
+
+async function processSale() {
+    const btn = document.getElementById('complete-sale-btn');
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'PROCESSING…';
+
+    let payments = [];
+    if (document.getElementById('pay-split').checked) {
         const cash = parseFloat(document.getElementById('split-cash').value) || 0;
         const momo = parseFloat(document.getElementById('split-momo').value) || 0;
         const card = parseFloat(document.getElementById('split-card').value) || 0;
-        updateMathDisplay((cash+momo+card) - cartTotal);
+        if (cash > 0) payments.push({method: 'CASH', amount: cash.toFixed(2)});
+        if (momo > 0) payments.push({method: 'MOMO', amount: momo.toFixed(2)});
+        if (card > 0) payments.push({method: 'CARD', amount: card.toFixed(2)});
+    } else {
+        const raw = document.getElementById('tendered').value;
+        const amount = raw === '' ? cartTotal : (parseFloat(raw) || 0);
+        if (amount > 0) payments.push({method: currentMethod(), amount: amount.toFixed(2)});
     }
 
-    function updateMathDisplay(change) {
-        const changeEl = document.getElementById('change-amount');
-        const changeLabel = document.getElementById('change-label');
-        const btn = document.getElementById('complete-sale-btn');
+    try {
+        const res = await fetch(URLS.process, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': CSRF},
+            body: JSON.stringify({
+                cart: cartPayload(),
+                payments: payments,
+                customer_id: selectedCustomer ? selectedCustomer.id : null,
+                wholesale: isWholesale,
+                total_amount: (verifiedTotal != null ? verifiedTotal : cartTotal).toFixed(2),
+            }),
+        });
+        const result = await res.json();
 
-        if (change >= 0) {
-            changeLabel.innerText = "CHANGE DUE:";
-            changeEl.innerText = "₵" + change.toLocaleString(undefined, {minimumFractionDigits: 2});
-            changeEl.className = "fs-1 fw-bold text-success";
-            btn.disabled = false; btn.innerText = "COMPLETE SALE";
-            btn.className = "btn btn-success w-100 py-3 fw-bold fs-4 rounded-pill shadow-sm text-white";
-        } else {
-            const debt = Math.abs(change);
-            if (selectedCustomerId) {
-                changeLabel.innerText = "CREATE DEBT / CREDIT:";
-                changeEl.innerText = "₵" + debt.toLocaleString(undefined, {minimumFractionDigits: 2});
-                changeEl.className = "fs-1 fw-bold text-danger";
-                btn.disabled = false; btn.innerText = "CONFIRM (CREDIT SALE)";
-                btn.className = "btn btn-danger w-100 py-3 fw-bold fs-4 rounded-pill shadow-sm text-white";
-            } else {
-                changeLabel.innerText = "MECHANIC REQUIRED FOR CREDIT:";
-                changeEl.innerText = "₵" + debt.toLocaleString(undefined, {minimumFractionDigits: 2});
-                changeEl.className = "fs-4 fw-bold text-danger";
-                btn.disabled = true; btn.innerText = "SELECT MECHANIC";
-                btn.className = "btn btn-secondary w-100 py-3 fw-bold fs-4 rounded-pill shadow-sm text-white opacity-50";
-            }
-        }
-    }
-
-    async function processSale() {
-        const btn = document.getElementById('complete-sale-btn');
-        btn.disabled = true; btn.innerText = "PROCESSING...";
-
-        let payments = [];
-        if (document.getElementById('pay-split').checked) {
-            const cash = parseFloat(document.getElementById('split-cash').value) || 0;
-            const momo = parseFloat(document.getElementById('split-momo').value) || 0;
-            const card = parseFloat(document.getElementById('split-card').value) || 0;
-            if(cash>0) payments.push({method:'CASH', amount:cash});
-            if(momo>0) payments.push({method:'MOMO', amount:momo});
-            if(card>0) payments.push({method:'CARD', amount:card});
-        } else {
-            const method = document.querySelector('input[name="payment"]:checked').value;
-            const t = document.getElementById('tendered').value;
-            payments.push({method: method, amount: t === "" ? cartTotal : (parseFloat(t)||0)});
+        if (!result.success) {
+            Swal.fire({icon: 'error', title: 'Sale Rejected', text: result.message, width: 520});
+            btn.disabled = false;
+            btn.textContent = original;
+            return;
         }
 
-        try {
-            const res = await fetch('/sales/process/', {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
-                body: JSON.stringify({ cart: cart, payments: payments, customer_id: selectedCustomerId, total_amount: cartTotal })
-            });
-            const result = await res.json();
-            if(result.success) {
-                bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
-                Swal.fire({icon:'success', title:'Sale Complete', timer: 1500, showConfirmButton: false});
-                cart = []; renderCart(); selectCustomer('Walk-in Customer', 'No Credit Allowed', null);
-            } else {
-                Swal.fire({icon:'error', title:'Sale Rejected', text:result.message, customClass: {confirmButton: 'btn btn-primary rounded-pill'}});
-            }
-        } catch(e) { Swal.fire({icon: 'error', title: 'Error', text: 'Network connection lost', customClass: {confirmButton: 'btn btn-primary rounded-pill'}}); }
-        btn.disabled = false; btn.innerText = "COMPLETE SALE";
+        bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
+        showReceipt(result);
+        updateShiftStrip(result.shift);
+        cart = [];
+        renderCart();
+        loadProducts();   // stock levels just changed
+    } catch (e) {
+        Swal.fire({icon: 'error', title: 'Connection lost',
+                   text: 'The sale was NOT recorded. Check the connection and try again.'});
+        btn.disabled = false;
+        btn.textContent = original;
     }
+}
+
+function showReceipt(result) {
+    document.getElementById('receipt-preview-content').innerHTML = result.receipt_html;
+    document.getElementById('receipt-title').textContent =
+        result.balance > 0
+            ? `${result.invoice_number} — ₵${money(result.balance)} on account`
+            : `${result.invoice_number} — paid`;
+    new bootstrap.Modal(document.getElementById('receiptModal')).show();
+}
+
+function updateShiftStrip(shift) {
+    if (!shift) return;
+    document.getElementById('shift-revenue').textContent = '₵' + money(shift.revenue);
+    document.getElementById('shift-transactions').textContent = shift.transactions;
+    document.getElementById('shift-expected').textContent = '₵' + money(shift.expected_cash);
+    document.getElementById('shift-digital').textContent = '₵' + money(shift.digital);
+    document.getElementById('shift-credit').textContent = '₵' + money(shift.credit);
+}
+
+function printReceipt() {
+    const frame = document.getElementById('print-frame');
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(`<html><head><title>Receipt</title><style>
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; margin: 0; padding: 8px; color: #000; }
+        .print-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+        .print-divider { border-bottom: 1px dashed #000; margin: 5px 0; }
+        .print-center { text-align: center; }
+        .print-bold { font-weight: bold; }
+        .print-lg { font-size: 14px; }
+        @page { margin: 0; }
+    </style></head><body>${document.getElementById('receipt-preview-content').innerHTML}</body></html>`);
+    doc.close();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+}
+
+function resetPOS() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('receiptModal'));
+    if (modal) modal.hide();
+    cart = [];
+    selectCustomer(null);
+    renderCart();
+    document.getElementById('product-search').value = '';
+    document.getElementById('product-search').focus();
+    catalogue.page = 1;
+    loadProducts();
+}
+
+// ---------------------------------------------------------------------------
+// WIRING
+// ---------------------------------------------------------------------------
+document.getElementById('product-search').addEventListener('input', scheduleSearch);
+['filter-category', 'filter-stock', 'filter-sort', 'filter-per-page'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => { catalogue.page = 1; loadProducts(); });
+});
+
+// Enter in the search box adds the only matching part — fast barcode/SKU flow.
+document.getElementById('product-search').addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(searchTimer);
+    await loadProducts();
+    if (catalogue.rows.length === 1) {
+        const row = catalogue.rows[0];
+        addToCart(row.id, row.is_pair ? 'PAIR' : 'PIECE');
+        document.getElementById('product-search').select();
+    }
+});
+
+renderCart();
+loadProducts();
 </script>
 {% endblock %}

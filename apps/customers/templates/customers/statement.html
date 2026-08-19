@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Account Statement - {{ customer.get_display_name }}{% endblock %}
+{% block title %}Account Statement - {{ customer.display_name }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -42,7 +42,7 @@
             <div class="text-end">
                 <div class="statement-title">STATEMENT OF ARREARS</div>
                 <h5 class="mt-3 fw-bold text-dark">To:</h5>
-                <p class="mb-0 fw-bold fs-5">{{ customer.get_display_name }}</p>
+                <p class="mb-0 fw-bold fs-5">{{ customer.display_name }}</p>
                 <p class="mb-0">{{ customer.phone_number }}</p>
             </div>
         </div>
@@ -52,12 +52,12 @@
             <div class="col-md-6">
                 <div class="summary-box">
                     <h6 class="text-uppercase text-muted mb-1">Total Outstanding Balance</h6>
-                    <h2 class="text-danger fw-bolder mb-0">₵{{ customer.current_debt|intcomma }}</h2>
+                    <h2 class="text-danger fw-bolder mb-0">₵{{ customer.current_debt|floatformat:2|intcomma }}</h2>
                 </div>
             </div>
             <div class="col-md-6 text-end">
-                <p class="mb-1 text-muted">Credit Limit: <strong>₵{{ customer.credit_limit|intcomma }}</strong></p>
-                <p class="mb-0 text-muted">Available Credit: <strong>₵{{ customer.available_credit|intcomma }}</strong></p>
+                <p class="mb-1 text-muted">Credit Limit: <strong>₵{{ customer.credit_limit|floatformat:2|intcomma }}</strong></p>
+                <p class="mb-0 text-muted">Available Credit: <strong>₵{{ customer.available_credit|floatformat:2|intcomma }}</strong></p>
             </div>
         </div>
 
@@ -83,11 +83,18 @@
                                 #{{ sale.invoice_number|slice:":8" }}
                             </a>
                         </td>
-                        <td class="text-end">{{ sale.total_amount|intcomma }}</td>
-                        <td class="text-end">{{ sale.amount_paid|intcomma }}</td>
+                        <td class="text-end">
+                            {{ sale.total_amount|floatformat:2|intcomma }}
+                            {% if sale.refunded_amount > 0 %}
+                            <div class="small text-muted">less {{ sale.refunded_amount|floatformat:2|intcomma }} returned</div>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">{{ sale.amount_paid|floatformat:2|intcomma }}</td>
                         <td class="text-end fw-bold text-danger">
-                            <!-- Math: Total Amount - Amount Paid = Debt on this specific invoice -->
-                            {{ sale.total_amount|add:"-"|add:sale.amount_paid|intcomma }}
+                            <!-- `outstanding` is annotated by Customer.unpaid_invoices():
+                                 total - refunded - paid. Doing this arithmetic in the
+                                 template silently produced a blank column before. -->
+                            {{ sale.outstanding|floatformat:2|intcomma }}
                         </td>
                     </tr>
                     {% empty %}
@@ -103,7 +110,7 @@
                 <tfoot class="table-light">
                     <tr>
                         <th colspan="4" class="text-end fs-5">TOTAL ARREARS DUE:</th>
-                        <th class="text-end fs-5 text-danger fw-bolder">₵{{ customer.current_debt|intcomma }}</th>
+                        <th class="text-end fs-5 text-danger fw-bolder">₵{{ customer.current_debt|floatformat:2|intcomma }}</th>
                     </tr>
                 </tfoot>
                 {% endif %}

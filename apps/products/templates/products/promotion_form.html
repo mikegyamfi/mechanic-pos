@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load crispy_forms_filters %}
+{% load humanize %}
+
+{% block title %}{{ title }} | Abossey Okai Hub{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ title }}</h5>
+                <a href="{% url 'products:promotion_list' %}" class="btn btn-outline-secondary">
+                    <i class="ri-arrow-go-back-line me-1"></i> Cancel
+                </a>
+            </div>
+
+            <div class="card-body">
+                <div class="alert alert-primary py-2">
+                    <i class="ri-information-line me-1"></i>
+                    A promotion lowers the selling price <strong>and</strong> the price floor to that
+                    same figure. Cashiers may charge the promotional price and nothing lower.
+                    Paired parts get the discount on the pair price, and the split rule derives the
+                    single-piece price from the discounted figure automatically.
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <div class="col-md-8">{{ form.name|as_crispy_field }}</div>
+                        <div class="col-md-4">{{ form.is_active|as_crispy_field }}</div>
+                        <div class="col-12">{{ form.description|as_crispy_field }}</div>
+                    </div>
+
+                    <h6 class="fw-bold text-muted mt-4 mb-3">The discount</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">{{ form.discount_type|as_crispy_field }}</div>
+                        <div class="col-md-6">{{ form.value|as_crispy_field }}</div>
+                    </div>
+
+                    <h6 class="fw-bold text-muted mt-4 mb-3">What it covers</h6>
+                    <div class="form-check form-switch mb-3">
+                        {{ form.applies_to_all }}
+                        <label class="form-check-label fw-bold text-warning" for="{{ form.applies_to_all.id_for_label }}">
+                            Apply to the entire catalogue
+                        </label>
+                    </div>
+                    <div class="row g-3" id="scope-fields">
+                        <div class="col-md-5">
+                            {{ form.products|as_crispy_field }}
+                            <small class="text-muted">Hold Ctrl / Cmd to pick several.</small>
+                        </div>
+                        <div class="col-md-4">
+                            {{ form.categories|as_crispy_field }}
+                            <small class="text-muted">Includes every sub-category underneath.</small>
+                        </div>
+                        <div class="col-md-3">{{ form.locations|as_crispy_field }}</div>
+                    </div>
+
+                    <h6 class="fw-bold text-muted mt-4 mb-3">When it runs</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">{{ form.starts_at|as_crispy_field }}</div>
+                        <div class="col-md-6">{{ form.ends_at|as_crispy_field }}</div>
+                    </div>
+
+                    <div class="card border-danger mt-4">
+                        <div class="card-body py-3">
+                            <div class="form-check form-switch mb-1">
+                                {{ form.allow_below_cost }}
+                                <label class="form-check-label fw-bold text-danger" for="{{ form.allow_below_cost.id_for_label }}">
+                                    Allow this promotion to sell below landed cost
+                                </label>
+                            </div>
+                            <small class="text-muted">
+                                Leave this off and the system refuses any discount that would put a part
+                                below what you paid for it. It also keeps checking after the fact: if a new
+                                shipment pushes the cost up, the promotion quietly suspends itself on that
+                                part instead of turning into a loss.
+                            </small>
+                            {% if form.allow_below_cost.errors %}
+                            <div class="text-danger small mt-1">{{ form.allow_below_cost.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-top">
+                        <button type="submit" class="btn btn-primary me-2">Save promotion</button>
+                        <a href="{% url 'products:promotion_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Hide the part/category pickers when the promotion covers everything.
+(function () {
+    const all = document.getElementById('{{ form.applies_to_all.id_for_label }}');
+    const scope = document.getElementById('scope-fields');
+    function refresh() { scope.style.display = all.checked ? 'none' : ''; }
+    all.addEventListener('change', refresh);
+    refresh();
+})();
+</script>
+{% endblock %}

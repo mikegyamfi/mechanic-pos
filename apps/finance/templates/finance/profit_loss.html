@@ -160,12 +160,27 @@
                             <td colspan="2"><i class="ri-add-circle-line text-success me-2"></i> INCOME</td>
                         </tr>
                         <tr>
-                            <td class="ps-4">Sales Revenue</td>
-                            <td class="text-end fw-bold">{{ total_revenue|intcomma }}</td>
+                            <td class="ps-4">
+                                Sales Revenue
+                                <small class="text-muted d-block">
+                                    {{ invoice_count }} invoice{{ invoice_count|pluralize }}, net of returns
+                                </small>
+                            </td>
+                            <td class="text-end fw-bold">{{ total_revenue|floatformat:2|intcomma }}</td>
                         </tr>
+                        {% if total_refunds > 0 %}
+                        <tr>
+                            <td class="ps-4 text-muted">
+                                <small>(returns already deducted above)</small>
+                            </td>
+                            <td class="text-end text-muted">
+                                <small>- {{ total_refunds|floatformat:2|intcomma }}</small>
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr class="row-total border-bottom">
                             <td class="ps-4">Total Income</td>
-                            <td class="text-end text-primary">{{ total_revenue|intcomma }}</td>
+                            <td class="text-end text-primary">{{ total_revenue|floatformat:2|intcomma }}</td>
                         </tr>
 
                         <!-- COGS SECTION -->
@@ -173,12 +188,20 @@
                             <td colspan="2"><i class="ri-subtract-line text-danger me-2"></i> DIRECT COSTS</td>
                         </tr>
                         <tr>
-                            <td class="ps-4">Cost of Goods Sold</td>
-                            <td class="text-end text-danger">- {{ total_cogs|intcomma }}</td>
+                            <td class="ps-4">
+                                Cost of Goods Sold
+                                <small class="text-muted d-block">
+                                    true cost of the batches these sales consumed
+                                </small>
+                            </td>
+                            <td class="text-end text-danger">- {{ total_cogs|floatformat:2|intcomma }}</td>
                         </tr>
                         <tr class="row-highlight">
-                            <td class="ps-4">GROSS PROFIT</td>
-                            <td class="text-end">{{ gross_profit|intcomma }}</td>
+                            <td class="ps-4">
+                                GROSS PROFIT
+                                <small class="text-muted d-block fw-normal">{{ gross_margin|floatformat:1 }}% margin</small>
+                            </td>
+                            <td class="text-end">{{ gross_profit|floatformat:2|intcomma }}</td>
                         </tr>
 
                         <!-- EXPENSES SECTION -->

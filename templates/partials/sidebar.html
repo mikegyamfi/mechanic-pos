@@ -84,6 +84,13 @@
           <div data-i18n="Customers">Mechanics & Customers</div>
         </a>
     </li>
+
+    <li class="menu-item">
+        <a href="{% url 'customers:receivables' %}" class="menu-link">
+          <i class="menu-icon icon-base ri ri-hand-coin-line"></i>
+          <div data-i18n="Receivables">Money Owed to You</div>
+        </a>
+    </li>
     {% endif %}
 
     <!-- ============================================== -->
@@ -149,6 +156,21 @@
           <div data-i18n="Products">Product Catalog</div>
         </a>
     </li>
+
+    {% if user.role == 'OWNER' or user.role == 'MANAGER' %}
+    <li class="menu-item">
+        <a href="{% url 'products:promotion_list' %}" class="menu-link">
+          <i class="menu-icon icon-base ri ri-sale-line"></i>
+          <div data-i18n="Promotions">Promotions</div>
+        </a>
+    </li>
+    <li class="menu-item">
+        <a href="{% url 'products:price_suggestions' %}" class="menu-link">
+          <i class="menu-icon icon-base ri ri-price-tag-3-line"></i>
+          <div data-i18n="Prices">Price Suggestions</div>
+        </a>
+    </li>
+    {% endif %}
     {% endif %}
 
     <!-- ============================================== -->

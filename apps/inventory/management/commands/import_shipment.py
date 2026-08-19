@@ -3,7 +3,7 @@ import time
 from decimal import Decimal
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from apps.products.models import Product, Category
+from apps.products.models import Category, PriceChangeLog, Product
 from apps.inventory.models import Shipment, ShipmentItem
 
 
@@ -173,18 +173,31 @@ def process_confirmed_import(items, supplier_name, exchange_rate, total_freight_
                 'category': product_category,
                 'selling_price': outside_sale,
                 'cost_price': Decimal('0.00'),
-                'is_sold_in_pairs': item['is_pair']
+                'is_sold_in_pairs': item['is_pair'],
+                # New products get the standard split rule: a broken pair sells
+                # for 60% of the pair price, recalculated automatically.
+                'split_price_mode': Product.SplitPriceMode.PERCENT,
+                'split_price_percentage': Product.DEFAULT_SPLIT_PERCENTAGE,
             }
         )
 
         if created:
             products_created += 1
         else:
+            # Route the price through the governed path: if a human set this
+            # price by hand, the invoice figure is parked as a suggestion
+            # instead of overwriting their decision.
             if outside_sale > 0:
-                product.selling_price = outside_sale
+                product.apply_price(
+                    outside_sale,
+                    source=PriceChangeLog.Source.IMPORT,
+                    note=f"Excel import {invoice_number}",
+                )
+            # Deliberately NOT touching is_sold_in_pairs here. The parser infers
+            # it from an even piece count, and flipping it on an existing part
+            # would silently change whether selling_price means pair or piece.
             product.category = product_category
-            product.is_sold_in_pairs = item['is_pair']
-            product.save()
+            product.save(update_fields=['category'])
 
         ShipmentItem.objects.create(
             shipment=shipment,
